@@ -42,7 +42,10 @@
     }
     h1 { margin-top: 0; font-size: 1.65rem; }
     h2 { margin-top: 2rem; font-size: 1.2rem; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+    h3 { margin-top: 1.4rem; font-size: 1.02rem; }
     .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
     code {
       padding: 2px 6px;
       border-radius: 4px;
@@ -60,51 +63,77 @@
     <p class="meta">最近更新 / Last Updated: 2026-11-22</p>
 
     <h2>中文隐私政策</h2>
-    <p><strong>无登翻译（Modern Translator）</strong> 是一款完全免费、公益性质的浏览器扩展，无任何商业收费、内购或广告。本扩展尊重并保护您的隐私，仅用于提供网页划词翻译、网页全文双语对照翻译与语音朗读功能。</p>
+    <p><strong>无登翻译（Modern Translator，简称 ModernTrans）</strong> 是一款由个人非营利开发者（EU DSA 下的 Non-Trader 非商业主体）维护的完全免费、公益性质开源浏览器扩展，无任何商业收费、内购或广告。本扩展尊重并保护您的隐私，仅用于提供网页划词翻译、网页全文双语对照翻译与语音朗读功能。</p>
 
     <h3>1. 我们处理哪些数据</h3>
     <ul>
-      <li><strong>待翻译文本：</strong>仅在您主动触发划词翻译、右键菜单、快捷键或网页全文翻译时，扩展才会将您选中的文本或当前网页需要翻译的段落文本发送至您选定的翻译引擎。</li>
+      <li><strong>待翻译文本：</strong>仅当您主动触发划词翻译、右键菜单、快捷键或网页全文翻译时，扩展才会将您选中的文本或当前网页需要翻译的段落文本发送至您选定的翻译引擎。</li>
       <li><strong>配置与密钥：</strong>您的语言偏好、界面设置、自定义 OpenAI 兼容接口地址与 API Key 仅存储在本地浏览器的 <code>chrome.storage.local</code> 中，不会上传至与翻译无关的服务器。</li>
+      <li><strong>临时会话状态：</strong>整页自动翻译的标签页/窗口状态保存在本地浏览器的 <code>chrome.storage.session</code> 中，随会话结束自动销毁。</li>
       <li><strong>本地缓存：</strong>常用短词与短语的翻译结果会缓存在本地 IndexedDB（<code>ndt_translation_cache</code>）以提升响应速度，您可随时在设置页清理缓存。</li>
     </ul>
 
     <h3>2. 外部接口传输说明</h3>
     <p>扩展不会在后台自动采集您的浏览历史。仅在您触发翻译或朗读时，数据会发送至您选择的对应服务商：</p>
     <ul>
-      <li>微软翻译（Microsoft Translator）</li>
-      <li>谷歌翻译（Google Translate）</li>
-      <li>友情赞助商接口（<code>https://api.19781018.xyz</code>，公益赞助接口，仅在启用或查询额度时调用）</li>
-      <li>您自行配置的 OpenAI 兼容接口地址</li>
+      <li><strong>微软翻译（Microsoft Translator）：</strong><code>edge.microsoft.com</code>（或按需配置的 <code>api.cognitive.microsofttranslator.com</code>）。</li>
+      <li><strong>谷歌翻译（Google Translate）：</strong><code>translate.googleapis.com</code>（含 <code>translate_tts</code> 语音朗读）、<code>clients5.google.com</code> 或您填写的镜像地址。</li>
+      <li><strong>友情赞助商接口（<code>https://api.19781018.xyz</code>）：</strong>外部可选的第三方 API 服务；扩展自身无需登录与付费，仅在您主动填入 Key 并启用该服务或查询额度时调用。</li>
+      <li><strong>自定义 OpenAI 兼容接口：</strong>仅发送至您自行填写的 Base URL。</li>
     </ul>
 
-    <h3>3. 承诺声明</h3>
+    <h3>3. 权限说明</h3>
     <ul>
-      <li>不收集任何个人身份信息（PII）。</li>
-      <li>不包含第三方广告、统计埋点或跨站追踪脚本。</li>
-      <li>不出售、出租或共享用户数据用于任何非翻译用途。</li>
+      <li><code>&lt;all_urls&gt;</code>：用于在您浏览的网页注入划词浮窗与双语译文，并向已配置的翻译接口发起网络请求。</li>
+      <li><code>storage</code>：保存本地配置（<code>chrome.storage.local</code>）及临时会话自动翻译状态（<code>chrome.storage.session</code>）。</li>
+      <li><code>contextMenus</code>：提供右键“翻译选中文本 / 翻译当前网页”菜单项。</li>
+      <li><code>clipboardWrite</code> 与 <code>offscreen</code>：通过离屏文档（<code>offscreen.html</code>）复制译文到剪贴板及播放语音朗读（TTS）。</li>
+      <li><code>declarativeNetRequestWithHostAccess</code>：仅用于在用户使用谷歌语音朗读（<code>translate.googleapis.com/translate_tts</code>）时移除音频响应跨域限制头，不会读取或修改其他无关网站的流量。</li>
+    </ul>
+
+    <h3>4. 承诺声明与联系方式</h3>
+    <ul>
+      <li>不收集任何个人身份信息（PII），不包含第三方广告、统计埋点或跨站追踪脚本，不出售或共享用户数据。</li>
+      <li>开发者联系邮箱：<a href="mailto:wh1018@gmail.com">wh1018@gmail.com</a></li>
+      <li>开源仓库：<a href="https://github.com/wesele/ModernTranslator" target="_blank" rel="noreferrer">https://github.com/wesele/ModernTranslator</a></li>
     </ul>
 
     <hr />
 
     <h2>English Privacy Policy</h2>
-    <p><strong>Modern Translator</strong> is a completely free, non-profit (public-interest) browser extension with no paid plans, in-app purchases, or ads. It respects and protects your privacy and is solely dedicated to text selection translation, full-page bilingual translation, and text-to-speech playback.</p>
+    <p><strong>Modern Translator</strong> (<code>ModernTrans</code>) is a completely free, non-profit, open-source browser extension maintained by an independent individual developer (<strong>Non-Trader</strong> status under the EU Digital Services Act), with no paid plans, in-app purchases, or ads. It respects and protects your privacy and is solely dedicated to text selection translation, full-page bilingual translation, and text-to-speech playback.</p>
 
     <h3>1. Data Handling</h3>
     <ul>
       <li><strong>Text to Translate:</strong> Only when you explicitly initiate a translation does the extension send the selected text or webpage paragraphs to your chosen translation provider.</li>
       <li><strong>Settings &amp; API Keys:</strong> Preferences, custom endpoints, and API keys are stored locally in <code>chrome.storage.local</code> and are never transmitted to unrelated servers.</li>
+      <li><strong>Transient Session State:</strong> Per-tab/window auto-translation states are kept locally in <code>chrome.storage.session</code> and cleared automatically when the session ends.</li>
       <li><strong>Local Cache:</strong> Short translation results are cached locally in IndexedDB (<code>ndt_translation_cache</code>) and can be cleared anytime in settings.</li>
     </ul>
 
     <h3>2. External Services</h3>
-    <p>No browsing history is collected in the background. Translation or TTS requests are sent strictly to the engine selected by the user: Microsoft Translator, Google Translate, the Community Sponsor LLM endpoint (<code>https://api.19781018.xyz</code>), or a user-configured OpenAI-compatible API.</p>
-
-    <h3>3. Commitments</h3>
+    <p>No browsing history is collected in the background. Translation or TTS requests are sent strictly to the engine selected by the user:</p>
     <ul>
-      <li>No collection of personally identifiable information (PII).</li>
-      <li>No third-party ads, analytics SDKs, or behavioral tracking.</li>
-      <li>No sale or sharing of user data.</li>
+      <li><strong>Microsoft Translator:</strong> <code>edge.microsoft.com</code> (or <code>api.cognitive.microsofttranslator.com</code> when configured).</li>
+      <li><strong>Google Translate:</strong> <code>translate.googleapis.com</code> (including <code>translate_tts</code> audio playback), <code>clients5.google.com</code>, or a user-configured mirror URL.</li>
+      <li><strong>Community Sponsor LLM (<code>https://api.19781018.xyz</code>):</strong> An optional external third-party API endpoint; the extension itself requires no login or payment, and only contacts this host when you configure an API key or check quota.</li>
+      <li><strong>Custom OpenAI-compatible APIs:</strong> Sent strictly to the Base URL you configure.</li>
+    </ul>
+
+    <h3>3. Permission Disclosures</h3>
+    <ul>
+      <li><code>&lt;all_urls&gt;</code>: Required to inject the selection popover and bilingual full-page translations on webpages and send translation requests to built-in or user-configured API endpoints.</li>
+      <li><code>storage</code>: Persists preferences in <code>chrome.storage.local</code> and transient auto-translate state in <code>chrome.storage.session</code>.</li>
+      <li><code>contextMenus</code>: Provides right-click actions for translating selected text or full webpages.</li>
+      <li><code>clipboardWrite</code> &amp; <code>offscreen</code>: Uses an offscreen document (<code>offscreen.html</code>) for clipboard copy and audio/TTS playback.</li>
+      <li><code>declarativeNetRequestWithHostAccess</code>: Used solely with <code>net_request_rules.json</code> to remove <code>Cross-Origin-Resource-Policy</code> on <code>translate.googleapis.com/translate_tts</code> for audio/TTS playback. Unrelated traffic is never read or modified.</li>
+    </ul>
+
+    <h3>4. Commitments &amp; Contact</h3>
+    <ul>
+      <li>No collection of personally identifiable information (PII), no third-party ads, analytics SDKs, or behavioral tracking, and no sale or sharing of user data.</li>
+      <li>Developer Contact Email: <a href="mailto:wh1018@gmail.com">wh1018@gmail.com</a></li>
+      <li>Source Repository: <a href="https://github.com/wesele/ModernTranslator" target="_blank" rel="noreferrer">https://github.com/wesele/ModernTranslator</a></li>
     </ul>
   </main>
 </body>
