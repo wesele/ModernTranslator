@@ -1,4 +1,5 @@
-import _Ay_57422, * as mod_57422 from "ky";
+import _Ay_57422 from "ky";
+import { t as tr } from "../../../shared/i18n/index.js";
 const o = "https://edge.microsoft.com/translate/translatetext",
   a = "https://api.cognitive.microsofttranslator.com/translate",
   i =
@@ -40,7 +41,7 @@ async function c(e, t, n) {
           t = ` 状态码: ${e.response.status} (${e.response.statusText})\n`;
         }
       else t = `: ${e.message}`;
-      throw new Error(`翻译失败${t}`);
+      throw new Error(tr("error.msFailed", { detail: t }));
     }
   }
   const g = new URLSearchParams([...u.map((e) => ["to", e]), ["isEnterpriseClient", "false"]]);
@@ -63,12 +64,12 @@ async function c(e, t, n) {
     if (e.response)
       try {
         const n = await e.response.json();
-        t = ` 状态码: ${e.response.status} (${e.response.statusText})\n响应: ${JSON.stringify(n, null, 2)}\n`;
+        t = ` HTTP ${e.response.status} (${e.response.statusText})\n${JSON.stringify(n, null, 2)}\n`;
       } catch {
-        t = ` 状态码: ${e.response.status} (${e.response.statusText})\n`;
+        t = ` HTTP ${e.response.status} (${e.response.statusText})\n`;
       }
     else t = `: ${e.message}`;
-    throw new Error(`翻译失败${t}`);
+    throw new Error(tr("error.msFailed", { detail: t }));
   }
 }
 export { c as T };

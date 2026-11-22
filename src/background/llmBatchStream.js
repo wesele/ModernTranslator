@@ -5,15 +5,21 @@ import {
   createBatchStreamParser,
 } from "../shared/llmBatchProtocol.js";
 import {
+  DEFAULT_CUSTOM_LLM_MAX_CONCURRENCY,
+  DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY,
   OFFICIAL_LLM_BASE_URL,
   OFFICIAL_LLM_NAME,
   isCustomOpenAIServiceId,
+  normalizeLlmConcurrency,
   resolveChatCompletionsUrl,
 } from "../shared/openaiUtils.js";
+import { runWithLlmConcurrency } from "./llmConcurrency.js";
 import {
   lookupBatchTranslationCache,
   saveBatchTranslationCache,
 } from "./translationCache.js";
+import { t, getServiceDisplayName } from "../shared/i18n/index.js";
+import { extractApiErrorMessage, isLikelyApiErrorText } from "../shared/llmErrorUtils.js";
 
 function safePost(port, msg) {
   try {
@@ -30,12 +36,7 @@ async function readErrorMessage(response) {
     if (!text) return fallback;
     try {
       const json = JSON.parse(text);
-      const errObj = json?.error || json?.Response?.Error || json;
-      const msg =
-        errObj?.message ||
-        errObj?.Message ||
-        errObj?.error_msg ||
-        json?.message;
+      const msg = extractApiErrorMessage(json);
       if (msg) return String(msg);
     } catch {
       // Non-JSON error body
@@ -49,15 +50,21 @@ async function readErrorMessage(response) {
 async function consumeSSEStream(response, extractDelta, onChunkText, signal) {
   const contentType = (response.headers.get("content-type") || "").toLowerCase();
   if (!response.body) {
-    throw new Error("响应体为空");
+    throw new Error(t("error.emptyResponseBody"));
   }
 
   // Fallback for proxies that return plain JSON even when stream: true is sent
   if (contentType.includes("application/json")) {
-    const json = await response.json();
-    const err = json?.error || json?.Response?.Error;
-    if (err) {
-      throw new Error(err.message || err.Message || JSON.stringify(err));
+    const rawText = await response.text();
+    let json;
+    try {
+      json = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      throw new Error(rawText.slice(0, 240) || t("error.emptyResponseBody"));
+    }
+    const errMsg = extractApiErrorMessage(json);
+    if (errMsg) {
+      throw new Error(errMsg);
     }
     const text = extractDelta(json, true);
     if (text) onChunkText(text);
@@ -67,12 +74,20 @@ async function consumeSSEStream(response, extractDelta, onChunkText, signal) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
   let lineBuffer = "";
+  let sawSseData = false;
+  let nonSseSample = "";
 
   const processLine = (rawLine) => {
     const line = rawLine.trim();
     if (!line || line.startsWith(":")) return false;
-    if (!line.startsWith("data:")) return false;
+    if (!line.startsWith("data:")) {
+      if (!sawSseData && nonSseSample.length < 4096) {
+        nonSseSample += (nonSseSample ? "\n" : "") + line;
+      }
+      return false;
+    }
 
+    sawSseData = true;
     const payload = line.slice(5).trim();
     if (!payload) return false;
     if (payload === "[DONE]") return true;
@@ -84,14 +99,9 @@ async function consumeSSEStream(response, extractDelta, onChunkText, signal) {
       return false;
     }
 
-    if (parsed?.error) {
-      throw new Error(parsed.error.message || JSON.stringify(parsed.error));
-    }
-    if (parsed?.Response?.Error) {
-      throw new Error(parsed.Response.Error.Message || JSON.stringify(parsed.Response.Error));
-    }
-    if (parsed?.type === "error" && parsed?.error?.message) {
-      throw new Error(parsed.error.message);
+    const errMsg = extractApiErrorMessage(parsed);
+    if (errMsg) {
+      throw new Error(errMsg);
     }
 
     const delta = extractDelta(parsed, false);
@@ -117,7 +127,31 @@ async function consumeSSEStream(response, extractDelta, onChunkText, signal) {
     const tail = lineBuffer + decoder.decode();
     if (tail.trim()) {
       for (const line of tail.split(/\r?\n/)) {
-        processLine(line);
+        if (processLine(line)) return;
+      }
+    }
+
+    if (!sawSseData && nonSseSample.trim()) {
+      const trimmed = nonSseSample.trim();
+      try {
+        const json = JSON.parse(trimmed);
+        const errMsg = extractApiErrorMessage(json);
+        if (errMsg) {
+          throw new Error(errMsg);
+        }
+        const text = extractDelta(json, true);
+        if (text) onChunkText(text);
+        return;
+      } catch (parseOrApiErr) {
+        if (
+          parseOrApiErr instanceof Error &&
+          !(parseOrApiErr instanceof SyntaxError)
+        ) {
+          throw parseOrApiErr;
+        }
+      }
+      if (isLikelyApiErrorText(trimmed) || /^(?:<!doctype|<html)/i.test(trimmed)) {
+        throw new Error(trimmed.slice(0, 240));
       }
     }
   } finally {
@@ -163,10 +197,16 @@ async function streamDirectOpenAIChat(
   }
 
   if (!shouldStream) {
-    const json = await res.json();
-    const err = json?.error || json?.Response?.Error;
-    if (err) {
-      throw new Error(err.message || err.Message || JSON.stringify(err));
+    const rawText = await res.text();
+    let json;
+    try {
+      json = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      throw new Error(rawText.slice(0, 240) || t("error.emptyResponseBody"));
+    }
+    const errMsg = extractApiErrorMessage(json);
+    if (errMsg) {
+      throw new Error(errMsg);
     }
     const content = json?.choices?.[0]?.message?.content || "";
     if (content) onChunkText(content);
@@ -195,36 +235,50 @@ async function streamOfficialLlm(batchInput, onChunkText, signal) {
     officialLLMModel: "",
     officialLLMPrompt: "",
     officialLLMStreamEnabled: true,
+    officialLLMMaxConcurrency:
+      defaultOptions.officialLLMMaxConcurrency ?? DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY,
   });
 
   const apiKey = String(stored.officialLLMKey || "").trim();
   if (!apiKey) {
-    throw new Error("请先在配置页面填写友情赞助商服务的 API Key，可点击「免费获取」前往赞助方页面获取。");
+    throw new Error(t("error.officialNeedKeyBatch"));
   }
   const model = String(stored.officialLLMModel || "").trim();
   if (!model) {
-    throw new Error("请先在配置页面点击模型下拉框并选择一个模型。");
+    throw new Error(t("error.officialNeedModelBatch"));
   }
 
   const endpoint = resolveChatCompletionsUrl(
     stored.officialLLMBaseUrl || OFFICIAL_LLM_BASE_URL,
     `${OFFICIAL_LLM_BASE_URL}/chat/completions`
   );
+  const maxConcurrency = normalizeLlmConcurrency(
+    stored.officialLLMMaxConcurrency,
+    DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY
+  );
 
-  return streamDirectOpenAIChat(
+  return runWithLlmConcurrency(
     {
-      endpoint,
-      apiKey,
-      model,
-      customPrompt: stored.officialLLMPrompt,
-      streamEnabled:
-        batchInput?.streamEnabled !== undefined
-          ? batchInput.streamEnabled
-          : stored.officialLLMStreamEnabled !== false,
+      apiCode: ServiceId.OfficialLLM,
+      maxConcurrency,
+      signal,
     },
-    batchInput,
-    onChunkText,
-    signal
+    () =>
+      streamDirectOpenAIChat(
+        {
+          endpoint,
+          apiKey,
+          model,
+          customPrompt: stored.officialLLMPrompt,
+          streamEnabled:
+            batchInput?.streamEnabled !== undefined
+              ? batchInput.streamEnabled
+              : stored.officialLLMStreamEnabled !== false,
+        },
+        batchInput,
+        onChunkText,
+        signal
+      )
   );
 }
 
@@ -234,32 +288,45 @@ async function streamCustomOpenAIService(apiCode, batchInput, onChunkText, signa
   });
   const svc = customOpenAIServices.find((item) => item?.id === apiCode);
   if (!svc) {
-    throw new Error("未找到对应的自定义 OpenAI 兼容服务配置，请检查配置页面。");
+    throw new Error(t("error.customNotFound"));
   }
   const baseUrl = String(svc.baseUrl || "").trim();
   if (!baseUrl) {
-    throw new Error(`请先为「${svc.name || apiCode}」填写接口地址 (Base URL)。`);
+    throw new Error(t("error.customNeedBaseUrl", { name: svc.name || apiCode }));
   }
   const model = String(svc.model || "").trim();
   if (!model) {
-    throw new Error(`请先为「${svc.name || apiCode}」选择模型。`);
+    throw new Error(t("error.customNeedModel", { name: svc.name || apiCode }));
   }
 
   const endpoint = resolveChatCompletionsUrl(baseUrl);
-  return streamDirectOpenAIChat(
+  const maxConcurrency = normalizeLlmConcurrency(
+    svc.maxConcurrency,
+    DEFAULT_CUSTOM_LLM_MAX_CONCURRENCY
+  );
+
+  return runWithLlmConcurrency(
     {
-      endpoint,
-      apiKey: svc.apiKey,
-      model,
-      customPrompt: svc.prompt,
-      streamEnabled:
-        batchInput?.streamEnabled !== undefined
-          ? batchInput.streamEnabled
-          : svc.streamEnabled !== false,
+      apiCode,
+      maxConcurrency,
+      signal,
     },
-    batchInput,
-    onChunkText,
-    signal
+    () =>
+      streamDirectOpenAIChat(
+        {
+          endpoint,
+          apiKey: svc.apiKey,
+          model,
+          customPrompt: svc.prompt,
+          streamEnabled:
+            batchInput?.streamEnabled !== undefined
+              ? batchInput.streamEnabled
+              : svc.streamEnabled !== false,
+        },
+        batchInput,
+        onChunkText,
+        signal
+      )
   );
 }
 
@@ -293,7 +360,7 @@ export function registerLlmBatchStreamHandler() {
 
       let serviceName = apiCode;
       if (apiCode === ServiceId.OfficialLLM) {
-        serviceName = OFFICIAL_LLM_NAME;
+        serviceName = getServiceDisplayName(ServiceId.OfficialLLM);
       } else if (isCustomOpenAIServiceId(apiCode)) {
         const { customOpenAIServices = [] } = await chrome.storage.local.get({
           customOpenAIServices: [],
@@ -343,6 +410,7 @@ export function registerLlmBatchStreamHandler() {
           if (pendingDeltas.has(id)) {
             const text = pendingDeltas.get(id);
             pendingDeltas.delete(id);
+            if (isLikelyApiErrorText(text, missEntries[id]?.text)) return;
             const orig = missEntries[id]?.origIndex;
             if (orig != null) {
               safePost(port, { type: "delta", index: orig, text });
@@ -372,6 +440,7 @@ export function registerLlmBatchStreamHandler() {
               deltaTimers.delete(id);
             }
             pendingDeltas.delete(id);
+            if (isLikelyApiErrorText(text, missEntries[id]?.text)) return;
             const orig = missEntries[id]?.origIndex;
             if (orig != null) {
               safePost(port, { type: "item-done", index: orig, text });
@@ -387,7 +456,7 @@ export function registerLlmBatchStreamHandler() {
             controller.signal
           );
           if (!supported) {
-            throw new Error(`不支持的流式大模型服务：${serviceName}`);
+            throw new Error(t("error.unsupportedStreamLlm", { name: serviceName }));
           }
         } finally {
           for (const timer of deltaTimers.values()) clearTimeout(timer);
@@ -397,7 +466,28 @@ export function registerLlmBatchStreamHandler() {
 
         if (controller.signal.aborted) return;
 
-        const { completedResults } = parser.finish(missTexts.length);
+        const { completedResults, rawFullText } = parser.finish(missTexts.length);
+        let firstSegmentError = "";
+        let validSegmentCount = 0;
+        for (const [localIdx, val] of Array.from(completedResults.entries())) {
+          const srcText = missEntries[localIdx]?.text ?? "";
+          if (isLikelyApiErrorText(val, srcText)) {
+            if (!firstSegmentError) firstSegmentError = String(val).trim();
+            completedResults.delete(localIdx);
+          } else {
+            validSegmentCount += 1;
+          }
+        }
+
+        if (
+          validSegmentCount === 0 &&
+          (firstSegmentError ||
+            (rawFullText.trim() && isLikelyApiErrorText(rawFullText, missTexts[0])))
+        ) {
+          const errDetail = firstSegmentError || rawFullText.trim();
+          throw new Error(errDetail.slice(0, 240));
+        }
+
         const missResults = missTexts.map((_, idx) =>
           completedResults.has(idx) ? completedResults.get(idx) : null
         );
@@ -424,7 +514,7 @@ export function registerLlmBatchStreamHandler() {
         const message =
           err && typeof err === "object" && "message" in err && err.message
             ? String(err.message)
-            : String(err || "翻译失败");
+            : String(err || t("content.translateFailed"));
         const formattedMessage = message.startsWith(`【${serviceName}】`)
           ? message
           : `【${serviceName}】${message}`;

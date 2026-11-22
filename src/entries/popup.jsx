@@ -13,7 +13,9 @@ import { A as LanguageSelect } from "../components/LanguageSelect.jsx";
 import { a as ShowType } from "../content/ParagraphTranslator.js";
 import { isLlmService } from "../shared/llmBatchProtocol.js";
 import { VI as ServiceId } from "../shared/constants/services.js";
-import { OFFICIAL_LLM_ID, OFFICIAL_LLM_NAME } from "../shared/openaiUtils.js";
+import { OFFICIAL_LLM_ID } from "../shared/openaiUtils.js";
+import { UiLanguageSelect } from "../components/UiLanguageSelect.jsx";
+import { UI_LOCALE_TO_BCP47, useI18n } from "../shared/i18n/index.js";
 
 if (typeof document !== "undefined") {
   new InteractionModeEngine(document.documentElement, Classes.FOCUS_DISABLED).start();
@@ -34,11 +36,6 @@ const POPUP_STORAGE_DEFAULTS = {
   ...pick(secondaryOptions, ["pageTrsType"]),
 };
 
-const DISPLAY_MODE_OPTIONS = [
-  { label: "双语", value: ShowType.both },
-  { label: "译文", value: ShowType.result },
-];
-
 async function getActiveTab() {
   const tabs = await chrome.tabs.query({
     active: true,
@@ -50,6 +47,20 @@ async function getActiveTab() {
 
 function PopupApp() {
   useDarkMode();
+  const { locale, t } = useI18n();
+
+  React.useEffect(() => {
+    document.title = t("popup.pageTitle");
+    document.documentElement.lang = UI_LOCALE_TO_BCP47[locale] || "en";
+  }, [locale, t]);
+
+  const displayModeOptions = React.useMemo(
+    () => [
+      { label: t("popup.modeBilingual"), value: ShowType.both },
+      { label: t("popup.modeTranslated"), value: ShowType.result },
+    ],
+    [t]
+  );
 
   const [settings, setSettings] = useStorage(POPUP_STORAGE_DEFAULTS);
   const [tabId, setTabId] = React.useState(null);
@@ -68,13 +79,13 @@ function PopupApp() {
   const serviceOptions = React.useMemo(() => {
     const officialModel = String(settings?.officialLLMModel || "").trim();
     const primaryBuiltIn = [
-      { id: ServiceId.Microsoft, name: "微软翻译", isLlm: false, model: "" },
-      { id: ServiceId.Google, name: "谷歌翻译", isLlm: false, model: "" },
-      { id: OFFICIAL_LLM_ID, name: OFFICIAL_LLM_NAME, isLlm: true, model: officialModel },
+      { id: ServiceId.Microsoft, name: t("service.microsoft"), isLlm: false, model: "" },
+      { id: ServiceId.Google, name: t("service.google"), isLlm: false, model: "" },
+      { id: OFFICIAL_LLM_ID, name: t("service.officialLlm"), isLlm: true, model: officialModel },
     ];
     const customOpenAI = (settings?.customOpenAIServices || []).map((svc) => ({
       id: svc.id,
-      name: svc.name || "自定义大模型",
+      name: svc.name || t("service.customDefault"),
       isLlm: true,
       model: String(svc.model || "").trim(),
     }));
@@ -89,7 +100,7 @@ function PopupApp() {
       });
     }
     return list;
-  }, [settings?.officialLLMModel, settings?.customOpenAIServices, apiCode]);
+  }, [settings?.officialLLMModel, settings?.customOpenAIServices, apiCode, t]);
 
   const isCurrentLlm = isLlmService(apiCode);
 
@@ -158,11 +169,11 @@ function PopupApp() {
     async (message) => {
       const id = tabId ?? (await getActiveTab())?.id;
       if (!id) {
-        throw new Error("未找到当前标签页。");
+        throw new Error(t("popup.tabNotFound"));
       }
       return messaging._(message, id);
     },
-    [tabId]
+    [tabId, t]
   );
 
   const updateAndMaybeRestart = (patch) => {
@@ -233,7 +244,7 @@ function PopupApp() {
       }
     } catch {
       setTabSupported(false);
-      setErrorMsg("当前页面不支持网页全文翻译（如浏览器内置页面或商店页）。");
+      setErrorMsg(t("popup.unsupportedPage"));
     } finally {
       setActionPending(false);
     }
@@ -254,42 +265,45 @@ function PopupApp() {
       <header className="popup-header">
         <div className="popup-brand">
           <span className="popup-brand-icon" aria-hidden="true">
-            <Icon icon="translate" size={12} />
+            <img src={chrome.runtime.getURL("logodark.png")} alt="" />
           </span>
-          <span className="popup-title">网页全文翻译</span>
+          <span className="popup-title">{t("popup.headerTitle")}</span>
         </div>
-        {pageActive ? (
-          <span className={`status-badge ${pageTranslating ? "is-streaming" : "is-active"}`}>
-            <span className="status-dot" />
-            {pageTranslating ? "翻译中" : "已翻译"}
-          </span>
-        ) : (
-          isSuperStreaming && <span className="status-badge">超级流式</span>
-        )}
+        <div className="popup-header-right">
+          {pageActive && (
+            <span className={`status-badge ${pageTranslating ? "is-streaming" : "is-active"}`}>
+              <span className="status-dot" />
+              {pageTranslating ? t("popup.statusTranslating") : t("popup.statusTranslated")}
+            </span>
+          )}
+          <UiLanguageSelect compact />
+        </div>
       </header>
 
       <main className="popup-body">
         <section className="field-group">
           <div className="field-label-row">
-            <span className="field-label">源语言与目标语言</span>
-            <span className="field-tag">{source ? "指定源语" : "自动检测"}</span>
+            <span className="field-label">{t("popup.langSectionLabel")}</span>
+            <span className="field-tag">
+              {source ? t("popup.sourceFixed") : t("lang.autoDetect")}
+            </span>
           </div>
           <div className="lang-row">
             <div className="lang-slot">
-              <LanguageSelect lang={source} setLang={handleSourceChange} addAuto />
+              <LanguageSelect lang={source} setLang={handleSourceChange} addAuto maxHeight={200} />
             </div>
             <button
               type="button"
               className="lang-swap-btn"
               onClick={handleSwapLanguages}
               disabled={!source || source === target}
-              title={source ? "互换源语言和目标语言" : "源语言为自动检测时不可互换"}
-              aria-label="互换源语言和目标语言"
+              title={source ? t("popup.swapTitle") : t("popup.swapDisabledTitle")}
+              aria-label={t("popup.swapTitle")}
             >
               <Icon icon={source ? "exchange" : "arrow-right"} size={12} />
             </button>
             <div className="lang-slot">
-              <LanguageSelect lang={target} setLang={handleTargetChange} />
+              <LanguageSelect lang={target} setLang={handleTargetChange} maxHeight={200} />
             </div>
           </div>
         </section>
@@ -297,9 +311,9 @@ function PopupApp() {
         <section className="field-group">
           <div className="field-label-row">
             <label className="field-label" htmlFor="ndt-service-select">
-              翻译服务
+              {t("popup.serviceLabel")}
             </label>
-            {isSuperStreaming && <span className="field-tag">超级流式</span>}
+            {isSuperStreaming && <span className="field-tag">{t("popup.superStream")}</span>}
           </div>
           <div className="select-wrap">
             <select
@@ -311,7 +325,7 @@ function PopupApp() {
               {serviceOptions.map((svc) => (
                 <option key={svc.id} value={svc.id}>
                   {svc.name}
-                  {svc.isLlm ? `（${svc.model || "未选择模型"}）` : ""}
+                  {svc.isLlm ? ` (${svc.model || t("popup.noModelSelected")})` : ""}
                 </option>
               ))}
             </select>
@@ -323,10 +337,14 @@ function PopupApp() {
 
         <section className="field-group">
           <div className="field-label-row">
-            <span className="field-label">全文显示模式</span>
+            <span className="field-label">{t("popup.displayModeLabel")}</span>
           </div>
-          <div className="segmented-control" role="radiogroup" aria-label="全文翻译显示模式">
-            {DISPLAY_MODE_OPTIONS.map((opt) => {
+          <div
+            className="segmented-control"
+            role="radiogroup"
+            aria-label={t("popup.displayModeAria")}
+          >
+            {displayModeOptions.map((opt) => {
               const selected = displayType === opt.value;
               return (
                 <button
@@ -346,7 +364,7 @@ function PopupApp() {
 
         {(!tabSupported || errorMsg) && (
           <div className="popup-notice">
-            {errorMsg || "当前标签页暂不支持网页全文翻译，请在普通网页中使用。"}
+            {errorMsg || t("popup.unsupportedTabHint")}
           </div>
         )}
 
@@ -358,21 +376,21 @@ function PopupApp() {
             onClick={handleToggleTranslate}
           >
             <Icon icon={pageActive ? "stop" : "translate"} size={14} />
-            <span>{pageActive ? "取消翻译" : "翻译"}</span>
+            <span>{pageActive ? t("popup.cancelTranslateBtn") : t("popup.translateBtn")}</span>
           </button>
         </div>
       </main>
 
       <footer className="popup-footer">
-        <span className="footer-hint">整页段落实时翻译</span>
+        <span className="footer-hint">{t("popup.footerHint")}</span>
         <button
           type="button"
           className="settings-btn"
           onClick={handleOpenSettings}
-          title="打开配置界面"
+          title={t("popup.openSettingsTitle")}
         >
           <Icon icon="cog" size={12} />
-          <span>配置</span>
+          <span>{t("popup.settingsBtn")}</span>
         </button>
       </footer>
     </div>

@@ -4,6 +4,17 @@ import forEach from "lodash/forEach";
 import invert from "lodash/invert";
 import { $X as isThenable } from "../shared/utils/index.js";
 import { L as retryAsync } from "../shared/utils/retryAsync.js";
+import { MESSAGES } from "../shared/i18n/messages.js";
+import { normalizeUiLocale, detectDefaultUiLocale } from "../shared/i18n/locales.js";
+import { getLocalizedLanguageName } from "../shared/i18n/languageNames.js";
+
+function offscreenT(key, vars, locale) {
+  const loc = normalizeUiLocale(locale) || detectDefaultUiLocale();
+  const dict = MESSAGES[loc] || MESSAGES.en;
+  let tpl = dict[key] ?? MESSAGES.en[key] ?? key;
+  if (!vars || typeof tpl !== "string") return tpl;
+  return tpl.replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? String(vars[k]) : m));
+}
 
 const log = createDebug("@hcfyapp/messaging:onMessage");
 
@@ -29,7 +40,7 @@ const getVoicesInfo = () =>
         if (voices.length) {
           resolve(voices);
         } else {
-          reject(new Error("无法获取系统支持的语音列表，请稍后重试。"));
+          reject(new Error(offscreenT("error.ttsVoicesFail")));
         }
       }),
     { delay: 500, count: 10 }
@@ -169,18 +180,20 @@ registerMessageHandler((msg, { resolve }) => {
     case "dom: play with speech": {
       stopPlayback();
       const utter = new SpeechSynthesisUtterance(msg.text);
-      const { voiceName, systemVoiceLang, ...rest } = msg.options || {};
+      const { voiceName, systemVoiceLang, uiLocale, ...rest } = msg.options || {};
       Object.assign(utter, rest);
       return new Promise(async (res, rej) => {
         const timer = setTimeout(() => {
           speechSynthesis.cancel();
-          const langLabel = utter.lang ? LANG_CODE_TO_NAME[utter.lang] : "";
+          const rawLangName = utter.lang ? LANG_CODE_TO_NAME[utter.lang] : "";
+          const langLabel = rawLangName
+            ? getLocalizedLanguageName(rawLangName, uiLocale, "")
+            : "";
+          const langSuffix = langLabel ? ` (${langLabel})` : "";
           rej(
             new Error(
-              "系统语音朗读超时。" +
-                (isChrome
-                  ? `Chrome 浏览器提供的网络语音需要连接外网才能使用。${langLabel ? `（${langLabel}）` : ""}`
-                  : "")
+              offscreenT("error.ttsTimeout", null, uiLocale) +
+                (isChrome ? " " + offscreenT("error.ttsChromeNetwork", { lang: langSuffix }, uiLocale) : "")
             )
           );
         }, 1000);

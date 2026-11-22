@@ -1,0 +1,22 @@
+{
+   "commands_translate": {
+      "message": "선택한 텍스트 번역"
+   },
+   "commonds_page": {
+      "message": "웹페이지 전체 번역"
+   },
+   "commonds_pageSwitchMode": {
+      "message": "이중 언어 / 원문 / 번역문 전환"
+   },
+   "commonds_play": {
+      "message": "텍스트 소리 내어 읽기"
+   },
+   "description": {
+      "description": "Extension description.",
+      "message": "완전 무료·비영리 드래그 및 웹페이지 전체 번역 확장 프로그램. 이중 언어 보기, LLM 스트리밍 일괄 번역, Microsoft/Google 엔진, 커뮤니티 스폰서 및 OpenAI 호환 API를 지원합니다."
+   },
+   "name": {
+      "description": "Extension name.",
+      "message": "Modern Translator"
+   }
+}

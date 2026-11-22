@@ -44,6 +44,7 @@ export default `
 
   --ndt-focus-ring: rgba(24, 24, 27, 0.14);
   --ndt-shadow-window: 0 16px 40px -10px rgba(0, 0, 0, 0.14), 0 4px 12px -2px rgba(0, 0, 0, 0.06);
+  --ndt-shadow-popover: 0 14px 36px -8px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.07);
   --ndt-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.03);
   --ndt-scrollbar-thumb: rgba(0, 0, 0, 0.18);
   --ndt-scrollbar-thumb-hover: rgba(0, 0, 0, 0.34);
@@ -88,6 +89,7 @@ export default `
 
   --ndt-focus-ring: rgba(255, 255, 255, 0.16);
   --ndt-shadow-window: 0 22px 54px -12px rgba(0, 0, 0, 0.68), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --ndt-shadow-popover: 0 18px 40px -8px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.09);
   --ndt-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.22);
   --ndt-scrollbar-thumb: rgba(255, 255, 255, 0.18);
   --ndt-scrollbar-thumb-hover: rgba(255, 255, 255, 0.34);

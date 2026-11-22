@@ -1,6 +1,7 @@
 import Dexie from "dexie";
 import { VI as ServiceId } from "../shared/constants/services.js";
 import { isCustomOpenAIServiceId } from "../shared/openaiUtils.js";
+import { isLikelyApiErrorText } from "../shared/llmErrorUtils.js";
 
 export const CACHE_MAX_WORDS = 5;
 export const CACHE_MAX_TEXT_LENGTH = 160;
@@ -99,6 +100,13 @@ export async function lookupSingleTranslationCache({
     if (!entry || !isModelCompatible(entry, activeModel)) {
       return null;
     }
+    const cachedText =
+      entry.translatedText ||
+      (entry.singleResult?.result?.length ? entry.singleResult.result.join("\n") : "");
+    if (entry.singleResult?.error || isLikelyApiErrorText(cachedText, text)) {
+      translationCacheDb.entries.delete(key).catch(() => {});
+      return null;
+    }
     if (entry.singleResult && entry.singleDestKey === destKey) {
       return entry.singleResult;
     }
@@ -132,7 +140,7 @@ export async function saveSingleTranslationCache({
   const translatedText = response.result?.length
     ? response.result.join("\n").trim()
     : String(response.dict?.[0]?.terms?.[0] || "").trim();
-  if (!translatedText) return;
+  if (!translatedText || isLikelyApiErrorText(translatedText, text)) return;
 
   try {
     const trimmed = normalizeCacheText(text);
@@ -179,11 +187,23 @@ export async function lookupBatchTranslationCache({ apiCode, source, destination
       translationCacheDb.entries.bulkGet(candidates.map((c) => c.key)),
       resolveServiceCacheModel(apiCode),
     ]);
+    const poisonedKeys = [];
     entries.forEach((entry, i) => {
       if (!entry || !entry.translatedText) return;
       if (!isModelCompatible(entry, activeModel)) return;
-      hits.set(candidates[i].index, entry.translatedText);
+      const candidate = candidates[i];
+      if (
+        entry.singleResult?.error ||
+        isLikelyApiErrorText(entry.translatedText, texts[candidate.index])
+      ) {
+        poisonedKeys.push(candidate.key);
+        return;
+      }
+      hits.set(candidate.index, entry.translatedText);
     });
+    if (poisonedKeys.length) {
+      translationCacheDb.entries.bulkDelete(poisonedKeys).catch(() => {});
+    }
   } catch (err) {
     console.warn("[NDT cache] batch lookup failed:", err);
   }
@@ -198,7 +218,7 @@ export async function saveBatchTranslationCache({ apiCode, source, destination, 
   for (const item of items) {
     if (!item || !isCacheableTranslationUnit(item.text)) continue;
     const translatedText = String(item.translatedText ?? "").trim();
-    if (!translatedText) continue;
+    if (!translatedText || isLikelyApiErrorText(translatedText, item.text)) continue;
     const trimmed = normalizeCacheText(item.text);
     const key = buildCacheKey({ apiCode, source, destination, text: trimmed });
     deduped.set(key, {

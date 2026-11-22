@@ -17,13 +17,24 @@ import { _ as sendMessage, x as onMessage } from "../shared/messaging/index.js";
 import { _ as abortTimeout } from "../shared/utils/abortTimeout.js";
 import * as errors from "../shared/errors/index.js";
 import { registerLlmBatchStreamHandler } from "./llmBatchStream.js";
+import { runWithLlmConcurrency } from "./llmConcurrency.js";
+import { extractApiErrorMessage, isLikelyApiErrorText } from "../shared/llmErrorUtils.js";
 import {
+  DEFAULT_CUSTOM_LLM_MAX_CONCURRENCY,
+  DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY,
   OFFICIAL_LLM_BASE_URL,
   OFFICIAL_LLM_NAME,
   OFFICIAL_LLM_PORTAL_URL,
   isCustomOpenAIServiceId,
+  normalizeLlmConcurrency,
   resolveChatCompletionsUrl,
 } from "../shared/openaiUtils.js";
+import {
+  t,
+  getUiLocale,
+  getServiceDisplayName,
+  subscribeUiLocale,
+} from "../shared/i18n/index.js";
 import {
   lookupSingleTranslationCache,
   saveSingleTranslationCache,
@@ -138,7 +149,14 @@ autoModeStore.on("change-other-tabs-to", async (tabInfo, mode) => {
 });
 
 // Direct OpenAI-compatible request helper
-async function requestOpenAIChatDirect({ endpoint, apiKey, model, content, serviceName }) {
+async function requestOpenAIChatDirect({
+  endpoint,
+  apiKey,
+  model,
+  content,
+  serviceName,
+  sourceText = "",
+}) {
   const headers = { "Content-Type": "application/json" };
   const trimmedKey = String(apiKey || "").trim();
   if (trimmedKey) {
@@ -155,7 +173,9 @@ async function requestOpenAIChatDirect({ endpoint, apiKey, model, content, servi
       }),
     });
   } catch (err) {
-    throw new errors.Fw(`${serviceName} 网络请求失败：${err?.message || err}`);
+    throw new errors.Fw(
+      t("error.networkFailed", { name: serviceName, msg: err?.message || err })
+    );
   }
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
@@ -164,7 +184,11 @@ async function requestOpenAIChatDirect({ endpoint, apiKey, model, content, servi
       if (text) {
         try {
           const json = JSON.parse(text);
-          detail = json?.error?.message || json?.message || text.slice(0, 200);
+          detail =
+            extractApiErrorMessage(json) ||
+            json?.error?.message ||
+            json?.message ||
+            text.slice(0, 200);
         } catch {
           detail = text.slice(0, 200);
         }
@@ -172,11 +196,41 @@ async function requestOpenAIChatDirect({ endpoint, apiKey, model, content, servi
     } catch {
       // ignore read failure
     }
-    throw new errors.Fw(`${serviceName} 返回错误：${detail}`, {
+    throw new errors.Fw(t("error.serverReturned", { name: serviceName, detail }), {
       type: res.status === 401 || res.status === 403 ? errors.VC.NEED_KEY : errors.VC.API_SERVER_ERROR,
     });
   }
-  return res.json();
+  const rawText = await res.text();
+  let json;
+  try {
+    json = rawText ? JSON.parse(rawText) : null;
+  } catch {
+    throw new errors.Fw(
+      t("error.serverReturned", {
+        name: serviceName,
+        detail: rawText.slice(0, 200) || `HTTP ${res.status}`,
+      }),
+      { type: errors.VC.API_SERVER_ERROR }
+    );
+  }
+  const apiErr = extractApiErrorMessage(json);
+  if (apiErr) {
+    throw new errors.Fw(
+      t("error.serverReturned", { name: serviceName, detail: apiErr.slice(0, 240) }),
+      { type: errors.VC.API_SERVER_ERROR }
+    );
+  }
+  const msgContent = json?.choices?.[0]?.message?.content;
+  if (typeof msgContent === "string" && isLikelyApiErrorText(msgContent, sourceText)) {
+    throw new errors.Fw(
+      t("error.serverReturned", {
+        name: serviceName,
+        detail: msgContent.trim().slice(0, 240),
+      }),
+      { type: errors.VC.API_SERVER_ERROR }
+    );
+  }
+  return json;
 }
 
 const officialLlmTranslator = new (class extends TranslatorBase {
@@ -192,22 +246,24 @@ const officialLlmTranslator = new (class extends TranslatorBase {
       officialLLMKey: "",
       officialLLMModel: "",
       officialLLMPrompt: "",
+      officialLLMMaxConcurrency:
+        defaultOptions.officialLLMMaxConcurrency ?? DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY,
     });
     const apiKey = String(stored.officialLLMKey || "").trim();
     if (!apiKey) {
-      throw new errors.Fw("请先前往配置页填写友情赞助商服务的 API Key（可点击「免费获取」）。", {
+      throw new errors.Fw(t("error.officialNeedKey"), {
         type: errors.VC.NEED_KEY,
       });
     }
     const model = String(stored.officialLLMModel || "").trim();
     if (!model) {
-      throw new errors.Fw("请先前往配置页为友情赞助商服务选择模型。", {
+      throw new errors.Fw(t("error.officialNeedModel"), {
         type: errors.VC.NEED_KEY,
       });
     }
     const promptTpl = stored.officialLLMPrompt || "将下面的文本翻译为{{target}}：\n{{text}}";
     if (stored.officialLLMPrompt && !stored.officialLLMPrompt.includes("{{text}}")) {
-      throw new errors.Fw("翻译命令内必须包含 `{{text}}`，请前往配置页修改。", {
+      throw new errors.Fw(t("error.promptMissingText"), {
         type: errors.VC.OTHER,
       });
     }
@@ -218,13 +274,25 @@ const officialLlmTranslator = new (class extends TranslatorBase {
       stored.officialLLMBaseUrl || OFFICIAL_LLM_BASE_URL,
       `${OFFICIAL_LLM_BASE_URL}/chat/completions`
     );
-    return requestOpenAIChatDirect({
-      endpoint,
-      apiKey,
-      model,
-      content,
-      serviceName: OFFICIAL_LLM_NAME,
-    });
+    const maxConcurrency = normalizeLlmConcurrency(
+      stored.officialLLMMaxConcurrency,
+      DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY
+    );
+    return runWithLlmConcurrency(
+      {
+        apiCode: ServiceId.OfficialLLM,
+        maxConcurrency,
+      },
+      () =>
+        requestOpenAIChatDirect({
+          endpoint,
+          apiKey,
+          model,
+          content,
+          serviceName: getServiceDisplayName(ServiceId.OfficialLLM),
+          sourceText: req.text,
+        })
+    );
   }
   transform(req, rawResponse) {
     const dest = req.destinations[req.destIndex];
@@ -246,7 +314,7 @@ class CustomOpenAITranslator extends TranslatorBase {
   constructor(serviceId) {
     super({
       id: serviceId,
-      name: "自定义大模型",
+      name: t("service.customDefault"),
     });
     this.customServiceId = serviceId;
   }
@@ -256,26 +324,26 @@ class CustomOpenAITranslator extends TranslatorBase {
     });
     const svc = customOpenAIServices.find((item) => item?.id === this.customServiceId);
     if (!svc) {
-      throw new errors.Fw("未找到对应的自定义 OpenAI 兼容服务配置，请前往配置页查看。", {
+      throw new errors.Fw(t("error.customNotFound"), {
         type: errors.VC.NEED_KEY,
       });
     }
-    this.service.name = svc.name || "自定义大模型";
+    this.service.name = svc.name || t("service.customDefault");
     const baseUrl = String(svc.baseUrl || "").trim();
     if (!baseUrl) {
-      throw new errors.Fw(`请先为「${this.service.name}」填写接口地址 (Base URL)。`, {
+      throw new errors.Fw(t("error.customNeedBaseUrl", { name: this.service.name }), {
         type: errors.VC.NEED_KEY,
       });
     }
     const model = String(svc.model || "").trim();
     if (!model) {
-      throw new errors.Fw(`请先为「${this.service.name}」选择模型。`, {
+      throw new errors.Fw(t("error.customNeedModel", { name: this.service.name }), {
         type: errors.VC.NEED_KEY,
       });
     }
     const rawPrompt = svc.prompt || "";
     if (rawPrompt && !rawPrompt.includes("{{text}}")) {
-      throw new errors.Fw("翻译命令内必须包含 `{{text}}`，请前往配置页修改。", {
+      throw new errors.Fw(t("error.promptMissingText"), {
         type: errors.VC.OTHER,
       });
     }
@@ -283,13 +351,25 @@ class CustomOpenAITranslator extends TranslatorBase {
       .replaceAll("{{text}}", req.text)
       .replaceAll("{{target}}", req.destination);
     const endpoint = resolveChatCompletionsUrl(baseUrl);
-    return requestOpenAIChatDirect({
-      endpoint,
-      apiKey: svc.apiKey,
-      model,
-      content,
-      serviceName: this.service.name,
-    });
+    const maxConcurrency = normalizeLlmConcurrency(
+      svc.maxConcurrency,
+      DEFAULT_CUSTOM_LLM_MAX_CONCURRENCY
+    );
+    return runWithLlmConcurrency(
+      {
+        apiCode: this.customServiceId,
+        maxConcurrency,
+      },
+      () =>
+        requestOpenAIChatDirect({
+          endpoint,
+          apiKey: svc.apiKey,
+          model,
+          content,
+          serviceName: this.service.name,
+          sourceText: req.text,
+        })
+    );
   }
   transform(req, rawResponse) {
     const dest = req.destinations[req.destIndex];
@@ -318,18 +398,15 @@ function getTranslator(apiCode) {
       if (isCustomOpenAIServiceId(apiCode)) {
         return new CustomOpenAITranslator(apiCode);
       }
-      throw new errors.Fw(`未启用的翻译服务：${apiCode}`);
+      throw new errors.Fw(t("error.serviceDisabled", { apiCode }));
   }
 }
 
 registerLlmBatchStreamHandler();
 
-watchStorage(pick(defaultOptions, ["googleRegion", "googleType", "googleMirror"]), (changes) => {
+watchStorage(pick(defaultOptions, ["googleRegion", "googleMirror"]), (changes) => {
   if (changes.googleRegion) {
     googleTranslator.region = changes.googleRegion === "cn" ? "com" : changes.googleRegion;
-  }
-  if (changes.googleType) {
-    googleTranslator.type = changes.googleType;
   }
   if (changes.googleMirror != null) {
     googleTranslator.mirror = changes.googleMirror;
@@ -362,7 +439,7 @@ async function ensureOffscreenDocument() {
   creatingOffscreenPromise = chrome.offscreen.createDocument({
     url: OFFSCREEN_PATH,
     reasons: [chrome.offscreen.Reason.CLIPBOARD, chrome.offscreen.Reason.AUDIO_PLAYBACK],
-    justification: "用于语音朗读与复制翻译结果。",
+    justification: "Audio TTS playback and copying translated text to the clipboard.",
   });
   await creatingOffscreenPromise;
   creatingOffscreenPromise = null;
@@ -565,7 +642,7 @@ onMessage((msg) => {
           const destCode = ctx.destinations[ctx.destIndex];
           const sourceCode = ctx.source;
           let missResults = null;
-          if (data.apiCode === ServiceId.Google && translator.type === "fast") {
+          if (data.apiCode === ServiceId.Google) {
             missResults = await translateGoogleChromeExt(
               missTexts,
               destCode,
@@ -647,6 +724,7 @@ onMessage((msg) => {
           const speechOpts = {
             volume: audioVolume / 100,
             rate: audioRate,
+            uiLocale: getUiLocale(),
           };
           const group = audioReq.source && ACCENT_GROUP_MAP[audioReq.source];
           if (group && systemTTSAccent[group]) {
@@ -683,23 +761,26 @@ onMessage((msg) => {
 });
 
 // Context menus (only shown features: selection translation & webpage full-text translation)
-const CONTEXT_MENUS = [
-  {
-    id: "translate",
-    title: "翻译这段文本(&Z)",
-    contexts: ["selection"],
-  },
-  {
-    id: "page-translate",
-    title: "网页全文翻译",
-    contexts: ["page", "frame"],
-    documentUrlPatterns: ["*://*/*", "file://*/*", "ftp://*/*"],
-  },
-];
+function getContextMenus() {
+  return [
+    {
+      id: "translate",
+      title: t("contextMenu.translateSelection"),
+      contexts: ["selection"],
+    },
+    {
+      id: "page-translate",
+      title: t("contextMenu.pageTranslate"),
+      contexts: ["page", "frame"],
+      documentUrlPatterns: ["*://*/*", "file://*/*", "ftp://*/*"],
+    },
+  ];
+}
 
 function setupContextMenus() {
+  const menus = getContextMenus();
   chrome.contextMenus.removeAll(() => {
-    CONTEXT_MENUS.forEach((item) => {
+    menus.forEach((item) => {
       chrome.contextMenus.create(item);
     });
   });
@@ -707,6 +788,9 @@ function setupContextMenus() {
 
 chrome.runtime.onInstalled.addListener(setupContextMenus);
 chrome.runtime.onStartup.addListener(setupContextMenus);
+subscribeUiLocale(() => {
+  setupContextMenus();
+});
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!tab?.id) return;

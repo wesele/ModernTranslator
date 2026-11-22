@@ -88,7 +88,7 @@ html,
 body {
   margin: 0;
   padding: 0;
-  width: 312px;
+  width: 344px;
   min-height: 290px;
   background-color: var(--ndt-bg-window);
   color: var(--ndt-text-primary);
@@ -115,6 +115,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   padding: 10px 14px;
   background-color: var(--ndt-bg-surface);
   border-bottom: 1px solid var(--ndt-border-subtle);
@@ -125,19 +126,27 @@ body {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .popup-brand-icon {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 6px;
   background-color: var(--ndt-bg-subtle);
   border: 1px solid var(--ndt-border);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--ndt-text-primary);
+  overflow: hidden;
   flex-shrink: 0;
+}
+
+.popup-brand-icon img {
+  width: 17px;
+  height: 17px;
+  object-fit: contain;
+  display: block;
 }
 
 .popup-title {
@@ -145,6 +154,16 @@ body {
   font-weight: 600;
   color: var(--ndt-text-primary);
   letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popup-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .status-badge {
@@ -497,58 +516,4 @@ body {
   background-color: var(--ndt-bg-hover);
   color: var(--ndt-text-primary);
   border-color: var(--ndt-border-hover);
-}
-
-/* Blueprint Select Popover overrides matching contentPanelCss.js */
-.bp6-popover.bp6-select-popover {
-  border-radius: 10px !important;
-  overflow: hidden;
-  box-shadow: var(--ndt-shadow-popover) !important;
-  border: 1px solid var(--ndt-border) !important;
-  background-color: var(--ndt-bg-card) !important;
-}
-
-.bp6-select-popover .bp6-popover-content {
-  background-color: var(--ndt-bg-card) !important;
-  color: var(--ndt-text-primary) !important;
-  padding: 6px !important;
-  max-width: 260px;
-}
-
-.bp6-select-popover .bp6-input-group .bp6-input {
-  height: 28px;
-  border-radius: 7px;
-  border: 1px solid var(--ndt-border) !important;
-  background-color: var(--ndt-bg-surface) !important;
-  color: var(--ndt-text-primary) !important;
-  box-shadow: none !important;
-  font-size: 12px;
-}
-
-.bp6-select-popover .bp6-menu {
-  background: transparent !important;
-  color: var(--ndt-text-primary) !important;
-  padding: 4px 0 0 !important;
-  max-height: 210px;
-  overflow-y: auto;
-}
-
-.bp6-select-popover .bp6-menu-item {
-  border-radius: 6px !important;
-  font-size: 12px;
-  padding: 5px 8px;
-  color: var(--ndt-text-primary) !important;
-}
-
-.bp6-select-popover .bp6-menu-item:hover,
-.bp6-select-popover .bp6-menu-item.bp6-active {
-  background-color: var(--ndt-bg-hover) !important;
-  color: var(--ndt-text-primary) !important;
-}
-
-.bp6-select-popover .bp6-menu-header > h6 {
-  font-size: 10.5px;
-  color: var(--ndt-text-muted) !important;
-  margin: 4px 0 2px;
-  padding: 0 8px;
 }

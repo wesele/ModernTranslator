@@ -1,21 +1,44 @@
+import { t } from "./i18n/index.js";
+
 export const OFFICIAL_LLM_ID = "OfficialLLM";
 export const OFFICIAL_LLM_NAME = "友情赞助商";
 export const OFFICIAL_LLM_BASE_URL = "https://api.19781018.xyz/v1";
 export const OFFICIAL_LLM_PORTAL_URL = "https://api.19781018.xyz";
+export const DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY = 1;
+export const DEFAULT_CUSTOM_LLM_MAX_CONCURRENCY = 4;
+export const MIN_LLM_MAX_CONCURRENCY = 1;
+export const MAX_LLM_MAX_CONCURRENCY = 32;
+
+export function normalizeLlmConcurrency(
+  value,
+  fallback = DEFAULT_CUSTOM_LLM_MAX_CONCURRENCY
+) {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < MIN_LLM_MAX_CONCURRENCY) {
+    return fallback;
+  }
+  return Math.min(MAX_LLM_MAX_CONCURRENCY, Math.floor(num));
+}
 
 export function isCustomOpenAIServiceId(apiCode) {
   return typeof apiCode === "string" && apiCode.startsWith("custom-openai-");
 }
 
-export function getConfiguredTranslationServices(customOpenAIServices = []) {
+export function getConfiguredTranslationServices(customOpenAIServices = [], localeOverride) {
   const list = [
-    { id: "Microsoft", name: "微软翻译" },
-    { id: "GoogleWeb", name: "谷歌翻译" },
-    { id: OFFICIAL_LLM_ID, name: OFFICIAL_LLM_NAME },
+    { id: "Microsoft", name: t("service.microsoft", null, localeOverride) },
+    { id: "GoogleWeb", name: t("service.google", null, localeOverride) },
+    { id: OFFICIAL_LLM_ID, name: t("service.officialLlm", null, localeOverride) },
   ];
   for (const svc of customOpenAIServices || []) {
     if (svc?.id) {
-      list.push({ id: svc.id, name: svc.name || "OpenAI 兼容服务" });
+      list.push({
+        id: svc.id,
+        name: svc.name || t("service.customOpenAI", null, localeOverride),
+      });
     }
   }
   return list;
@@ -109,7 +132,7 @@ export async function readApiErrorDetail(response) {
 export async function fetchOpenAIModels(baseUrl, apiKey, signal) {
   const url = resolveModelsUrl(baseUrl);
   if (!url) {
-    throw new Error("请先填写有效的接口地址 (Base URL)");
+    throw new Error(t("error.openaiInvalidBaseUrl"));
   }
 
   const headers = { Accept: "application/json" };
@@ -129,14 +152,14 @@ export async function fetchOpenAIModels(baseUrl, apiKey, signal) {
     if (res.status === 401 || res.status === 403) {
       throw new Error(
         trimmedKey
-          ? `密钥认证失败（${res.status}）：${detail}`
-          : `需要 API Key 才能获取模型列表（${res.status}）`
+          ? t("error.openaiAuthFail", { status: res.status, detail })
+          : t("error.openaiNeedKeyForModels", { status: res.status })
       );
     }
     if (res.status === 404) {
-      throw new Error("当前接口未提供 /models 列表（404），请在下方手动输入模型名");
+      throw new Error(t("error.openaiModels404"));
     }
-    throw new Error(`获取模型列表失败：${detail}`);
+    throw new Error(t("error.openaiModelsFail", { detail }));
   }
 
   const json = await res.json();
@@ -184,7 +207,7 @@ export function formatQuotaRmb(rmb) {
 export async function fetchOfficialQuotaRmb({ baseUrl, apiKey, signal } = {}) {
   const trimmedKey = String(apiKey || "").trim();
   if (!trimmedKey) {
-    throw new Error("缺少 API Key");
+    throw new Error(t("error.quotaMissingKey"));
   }
 
   const origin = resolveOfficialQuotaOrigin(baseUrl);
@@ -220,13 +243,13 @@ export async function fetchOfficialQuotaRmb({ baseUrl, apiKey, signal } = {}) {
     tokenJson?.success === false ||
     tokenJson?.code === false
   ) {
-    throw new Error(tokenJson?.message || "无法读取 Key 额度信息");
+    throw new Error(tokenJson?.message || t("error.quotaReadFail"));
   }
 
   const unlimitedQuota = Boolean(tokenData.unlimited_quota);
   const totalAvailable = Number(tokenData.total_available);
   if (!unlimitedQuota && !Number.isFinite(totalAvailable)) {
-    throw new Error("Key 额度数据格式无效");
+    throw new Error(t("error.quotaBadFormat"));
   }
 
   let quotaPerUnit = 500000;
@@ -248,7 +271,7 @@ export async function fetchOfficialQuotaRmb({ baseUrl, apiKey, signal } = {}) {
   }
 
   if (!unlimitedQuota && (!Number.isFinite(usdExchangeRate) || usdExchangeRate <= 0)) {
-    throw new Error("无法获取站点汇率");
+    throw new Error(t("error.quotaNoRate"));
   }
 
   const rmb = unlimitedQuota

@@ -29,7 +29,14 @@ import noop from "lodash/noop";
 import * as mod_62269 from "../components/AddApiMenuItems.jsx";
 import * as mod_91307 from "../components/TranslatorToolbar.jsx";
 import * as mod_81152 from "../shared/hooks/useTranslateResults.js";
-import { filterSelectionAPIs } from "../shared/openaiUtils.js";
+import {
+  DEFAULT_CUSTOM_LLM_MAX_CONCURRENCY,
+  DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY,
+  OFFICIAL_LLM_ID,
+  filterSelectionAPIs,
+  isCustomOpenAIServiceId,
+  normalizeLlmConcurrency,
+} from "../shared/openaiUtils.js";
 import { produce } from "immer";
 import { usePrevious } from "react-use";
 import * as mod_66690 from "../services/translators/standardLanguages.js";
@@ -54,6 +61,7 @@ import {
   PROMPT_HEADER_BYTE_RESERVE,
   estimateSegmentBytes,
 } from "../shared/llmBatchProtocol.js";
+import { t as tr, useI18n, getServiceDisplayName } from "../shared/i18n/index.js";
 const u = "static" !== getComputedStyle(document.documentElement).position;
 function f() {
   return {
@@ -757,6 +765,7 @@ const ae = pick(
         }),
         [w, me.results, S]
       ));
+    const { t: trLocal } = useI18n();
     const Pe = (
         <AnchorButton
           icon={<Icon icon="cog" size={k} />}
@@ -768,7 +777,7 @@ const ae = pick(
           onClick={() => {
             fe((e) => !e);
           }}
-          title="快捷设置"
+          title={trLocal("content.quickSettings")}
         />
       );
     return (
@@ -787,7 +796,7 @@ const ae = pick(
               <div className="left">
                 {r}
               </div>
-              <div className="drag-block" title={u ? "按住不放可以拖动" : undefined}>
+              <div className="drag-block" title={u ? trLocal("content.dragTip") : undefined}>
                 <span className="drag-pill" aria-hidden="true" />
               </div>
               <div className="right">
@@ -797,7 +806,7 @@ const ae = pick(
                     small={j}
                     large={N}
                     minimal
-                    title="返回上一次翻译"
+                    title={trLocal("content.backPrev")}
                     onClick={() => {
                       const e = last(xe);
                       (e && (H(e), de(e)),
@@ -823,7 +832,7 @@ const ae = pick(
                               padding: "8px 10px",
                             }}
                           >
-                            添加 / 隐藏翻译源和语种切换在这里。{" "}
+                            {trLocal("content.quickTipText")}{" "}
                             <a
                               onClick={() => {
                                 x({
@@ -831,7 +840,7 @@ const ae = pick(
                                 });
                               }}
                             >
-                              不再提示
+                              {trLocal("content.dontShowAgain")}
                             </a>
                           </div>
                         }
@@ -869,7 +878,7 @@ const ae = pick(
                   className={classNames("source-copy-btn", {
                     "is-copied": sourceCopied,
                   })}
-                  title="复制原文"
+                  title={trLocal("content.copySource")}
                   onClick={() => {
                     mod_67116
                       ._({
@@ -900,7 +909,7 @@ const ae = pick(
                   }
             }
           >
-            {!U && <div className="empty-state">划选网页文本开始翻译</div>}
+            {!U && <div className="empty-state">{trLocal("content.emptySelection")}</div>}
             {U &&
               g &&
               S?.map((e, t) => {
@@ -939,8 +948,8 @@ const ae = pick(
             {S && !S.length && (
               <NonIdealState
                 className="no-api"
-                title="你隐藏了所有翻译源"
-                description="请添加一个翻译源来显示翻译结果。"
+                title={trLocal("content.allHiddenTitle")}
+                description={trLocal("content.allHiddenDesc")}
                 action={
                   <Popover
                     portalContainer={p}
@@ -950,7 +959,7 @@ const ae = pick(
                       </Menu>
                     }
                   >
-                    <AnchorButton icon="add" small={j} large={N} text="添加翻译源" />
+                    <AnchorButton icon="add" small={j} large={N} text={trLocal("content.addEngine")} />
                   </Popover>
                 }
               />
@@ -1131,7 +1140,6 @@ function Le(e) {
   };
 }
 const LLM_BATCH_PAYLOAD_LIMIT = MAX_LLM_BATCH_BYTES - PROMPT_HEADER_BYTE_RESERVE;
-const LLM_MAX_CONCURRENT_BATCHES = 2;
 const NATIVE_BATCH_APIS = new Set(["GoogleWeb", "Microsoft"]);
 const NATIVE_BATCH_MAX_ITEMS = 20;
 const NATIVE_BATCH_MAX_CHARS = 2500;
@@ -1159,15 +1167,20 @@ class Ve extends _A_27429 {
     const headerReserve = Math.min(PROMPT_HEADER_BYTE_RESERVE, Math.floor(maxBytes * 0.25));
     this.llmPayloadLimit = Math.max(400, maxBytes - headerReserve);
     this.llmStreamEnabled = llmCfg.streamEnabled !== false;
+    const defaultConcurrency =
+      e === OFFICIAL_LLM_ID
+        ? DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY
+        : DEFAULT_CUSTOM_LLM_MAX_CONCURRENCY;
+    this.llmMaxConcurrency = normalizeLlmConcurrency(llmCfg.maxConcurrency, defaultConcurrency);
     this.llmServiceName = llmCfg.serviceName || "";
   }
   getServiceDisplayName() {
     if (this.llmServiceName) return this.llmServiceName;
-    return mod_18785.v.find((svc) => svc.id === this.apiCode)?.name || this.apiCode;
+    return getServiceDisplayName(this.apiCode) || mod_18785.v.find((svc) => svc.id === this.apiCode)?.name || this.apiCode;
   }
   prefixError(err) {
     if (!err) return err;
-    const msg = err.message || "翻译失败";
+    const msg = err.message || tr("content.translateFailed");
     if (!msg.startsWith("【")) {
       err.message = `【${this.getServiceDisplayName()}】${msg}`;
     }
@@ -1387,7 +1400,7 @@ class Ve extends _A_27429 {
           r?.message && (r.message = `【${this.getServiceDisplayName()}】${r.message}`);
           e.forEach((item, idx) => {
             if (r) return void item.reject(r);
-            if (!s) return void item.reject(new Error("没有翻译结果"));
+            if (!s) return void item.reject(new Error(tr("content.noBatchResult")));
             const o = n[idx],
               i = o.end - o.start,
               a = s.slice(o.start, o.end);
@@ -1409,7 +1422,7 @@ class Ve extends _A_27429 {
       });
   }
   handleLlmBatchTasks() {
-    while (!this.destroyed && this.activeCount < LLM_MAX_CONCURRENT_BATCHES) {
+    while (!this.destroyed && this.activeCount < this.llmMaxConcurrency) {
       let batch = this.queue.shift();
       if (!batch) {
         if (!this.stream.length) break;
@@ -1488,14 +1501,14 @@ class Ve extends _A_27429 {
             if (results[idx] != null) {
               item.resolve(results[idx]);
             } else {
-              item.reject(new Error("模型未返回该段落译文"));
+              item.reject(new Error(tr("content.missingSegmentResult")));
             }
           });
           finalizePort();
           break;
         }
         case "error": {
-          const err = new Error(msg.error?.message || "翻译失败");
+          const err = new Error(msg.error?.message || tr("content.translateFailed"));
           if (msg.error?.link) err.link = msg.error.link;
           batch.forEach((item, idx) => {
             if (settled[idx]) return;
@@ -1510,7 +1523,7 @@ class Ve extends _A_27429 {
 
     port.onDisconnect.addListener(() => {
       if (!finished && !this.destroyed) {
-        const err = new Error("流式连接意外中断");
+        const err = new Error(tr("content.streamDisconnected"));
         batch.forEach((item, idx) => {
           if (settled[idx]) return;
           settled[idx] = true;
@@ -1560,7 +1573,7 @@ class qe {
     let s;
     if (n) s = n;
     else {
-      if (!Ke()) throw new TypeError("当前页面不是 txt 文件。");
+      if (!Ke()) throw new TypeError(tr("content.notTxtError"));
       s = document.body.firstElementChild;
     }
     ((this.preElement = s),
@@ -1574,7 +1587,7 @@ class qe {
         const s = t.replace(/\n/g, " ").trim();
         s
           ? ((this.totalCount += 1),
-            (this.resultParagraphs[n] = "正在翻译，请稍候……"),
+            (this.resultParagraphs[n] = tr("content.translatingWait")),
             e(s, (partial) => {
               if (!this.destroyed && null != partial) {
                 this.resultParagraphs[n] = partial;
@@ -1609,7 +1622,7 @@ class qe {
         break;
       case mod_94903.a.both:
         this.preElement.textContent = this.originParagraphs.reduce(
-          (e, t, n) => (t.trim() ? e + t + "\n【译文】" + this.resultParagraphs[n] + "\n\n" : e),
+          (e, t, n) => (t.trim() ? e + t + tr("content.txtPrefix") + this.resultParagraphs[n] + "\n\n" : e),
           ""
         );
     }
@@ -1835,7 +1848,7 @@ class nt {
     if (this.destroyed || !this.text || this.translating || this.translated) return;
     let e;
     ((this.translating = true),
-      (this.translateResult = "正在翻译……"),
+      (this.translateResult = tr("content.translatingShort")),
       this.switchShowType(this.showType));
     try {
       e = await this.translateFn(this.text);
@@ -1843,7 +1856,7 @@ class nt {
       return (
         (this.translating = false),
         (this.translated = true),
-        (this.translateResult = "翻译出错：" + e.message),
+        (this.translateResult = tr("content.translateErrPrefix", { msg: e.message })),
         void this.switchShowType(this.showType)
       );
     }
@@ -1864,7 +1877,7 @@ let it;
 function at() {
   if (it) return;
   ((it = document.createElement("style")),
-    (it.dataset.title = "这是由无登翻译创建的节点，用于控制全文翻译的译文样式。"),
+    (it.dataset.title = tr("content.styleNodeTitle")),
     document.head.appendChild(it));
   const e = pick(mod_16224.g2, [
     "pageTrsResultStyleId",
@@ -2076,6 +2089,7 @@ const $t = {
       "officialLLMBatchEnabled",
       "officialLLMBatchMaxBytes",
       "officialLLMStreamEnabled",
+      "officialLLMMaxConcurrency",
       "customOpenAIServices",
     ]),
     ...pick(mod_16224.Ne, ["pageTrsType"]),
@@ -2161,6 +2175,7 @@ function Bt(e) {
       officialLLMBatchEnabled,
       officialLLMBatchMaxBytes,
       officialLLMStreamEnabled,
+      officialLLMMaxConcurrency,
       customOpenAIServices,
     } = await chrome.storage.local.get($t);
     if (sessionIdRef.current !== currentSession) return;
@@ -2169,21 +2184,29 @@ function Bt(e) {
     w(dest[0]);
     x(source);
     let llmConfig = null;
-    if (apiCode === "OfficialLLM") {
+    if (apiCode === OFFICIAL_LLM_ID) {
       llmConfig = {
         batchEnabled: officialLLMBatchEnabled !== false,
         batchMaxBytes: officialLLMBatchMaxBytes,
         streamEnabled: officialLLMStreamEnabled !== false,
-        serviceName: "友情赞助商",
+        maxConcurrency: normalizeLlmConcurrency(
+          officialLLMMaxConcurrency,
+          DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY
+        ),
+        serviceName: tr("service.officialLlm"),
       };
-    } else if (typeof apiCode === "string" && apiCode.startsWith("custom-openai-")) {
+    } else if (isCustomOpenAIServiceId(apiCode)) {
       const customSvc = (customOpenAIServices || []).find((item) => item?.id === apiCode);
       if (customSvc) {
         llmConfig = {
           batchEnabled: customSvc.batchEnabled !== false,
           batchMaxBytes: customSvc.batchMaxBytes,
           streamEnabled: customSvc.streamEnabled !== false,
-          serviceName: customSvc.name || "自定义大模型",
+          maxConcurrency: normalizeLlmConcurrency(
+            customSvc.maxConcurrency,
+            DEFAULT_CUSTOM_LLM_MAX_CONCURRENCY
+          ),
+          serviceName: customSvc.name || tr("service.customDefault"),
         };
       }
     }
@@ -2437,6 +2460,7 @@ const cn = new (class {
 })();
 function Comp_Dn(e) {
   const { portalContainer: t } = e,
+    { t: trLocal } = useI18n(),
     [n, o] = mod_25148.A(on),
     l = n?.button,
     c = n?.closeAfterMove || on.closeAfterMove,
@@ -2642,7 +2666,7 @@ function Comp_Dn(e) {
                   small={b}
                   large={w}
                   minimal
-                  title="关闭(Esc)"
+                  title={trLocal("content.closeEsc")}
                 />
               }
               size={x}
@@ -2664,7 +2688,7 @@ function fn() {
   return (
     <mod_42631.A
       id="__hcfy__"
-      stylesheetURLs={["blueprint-select.css"]}
+      stylesheetURLs={["blueprint-select.css", "lang-select.css"]}
       cssText={
         ((e = contentPanelCss),
         e.replace(/url\((["']?)(.*?)\1\)/g, function (e, t, n) {

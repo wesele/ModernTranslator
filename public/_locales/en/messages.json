@@ -13,7 +13,7 @@
    },
    "description": {
       "description": "Extension description.",
-      "message": "Completely free, non-profit selection & full-page translator with bilingual view, streaming LLM batch translation, Microsoft/Google engines, community sponsor LLM, and custom OpenAI-compatible APIs."
+      "message": "Free selection & full-page translator with bilingual view, streaming LLM batching, Microsoft/Google, and custom OpenAI APIs."
    },
    "name": {
       "description": "Extension name.",

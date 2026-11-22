@@ -1,0 +1,22 @@
+{
+   "commands_translate": {
+      "message": "Traduire le texte sélectionné"
+   },
+   "commonds_page": {
+      "message": "Traduire toute la page web"
+   },
+   "commonds_pageSwitchMode": {
+      "message": "Basculer entre vue bilingue / originale / traduite"
+   },
+   "commonds_play": {
+      "message": "Lire le texte à haute voix"
+   },
+   "description": {
+      "description": "Extension description.",
+      "message": "Traducteur gratuit de sélection et page complète avec vue bilingue, LLM en streaming, Microsoft/Google et API OpenAI."
+   },
+   "name": {
+      "description": "Extension name.",
+      "message": "Modern Translator"
+   }
+}

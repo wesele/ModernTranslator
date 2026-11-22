@@ -1,5 +1,6 @@
 import { L as retryAsync } from "../../shared/utils/retryAsync.js";
 import { Fw as TranslateError } from "../../shared/errors/index.js";
+import { t, getServiceDisplayName } from "../../shared/i18n/index.js";
 
 class ServiceBase {
   constructor(service, retry = false) {
@@ -18,7 +19,8 @@ class ServiceBase {
   }
 
   callByFree() {
-    throw new Error(`无登翻译内部错误：没有为${this.service.name}提供具体实现。`);
+    const name = getServiceDisplayName(this.service.id) || this.service.name;
+    throw new Error(t("error.notImplemented", { name }));
   }
 
   call(req) {

@@ -1,9 +1,14 @@
 import { a as ShowType } from "./showType.js";
 import { VI as ServiceId } from "./services.js";
 import { $, T as contextMenuActionList } from "./contextMenuActions.js";
-import { OFFICIAL_LLM_BASE_URL } from "../openaiUtils.js";
+import {
+  DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY,
+  OFFICIAL_LLM_BASE_URL,
+} from "../openaiUtils.js";
+import { detectDefaultUiLocale } from "../i18n/locales.js";
 
 const defaultOptions = {
+  uiLanguage: detectDefaultUiLocale(),
   multiClick: "close",
   button: true,
   buttonAutoClose: true,
@@ -73,7 +78,6 @@ const defaultOptions = {
   pageTrsJumpTwo: false,
   pageTrsEditable: true,
   googleRegion: "com",
-  googleType: "fast",
   googleMirror: "",
   googleHidePhonetic: false,
   customAPINames: [],
@@ -88,6 +92,7 @@ const defaultOptions = {
   officialLLMBatchEnabled: true,
   officialLLMBatchMaxBytes: 10000,
   officialLLMStreamEnabled: true,
+  officialLLMMaxConcurrency: DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY,
   customOpenAIServices: [],
 };
 

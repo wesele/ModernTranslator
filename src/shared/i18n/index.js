@@ -1,0 +1,165 @@
+import * as React from "react";
+import {
+  UI_LANGUAGES,
+  SUPPORTED_UI_LOCALE_CODES,
+  UI_LOCALE_TO_BCP47,
+  normalizeUiLocale,
+  detectDefaultUiLocale,
+} from "./locales.js";
+import { MESSAGES } from "./messages.js";
+import {
+  getLocalizedLanguageName as resolveLanguageName,
+  getLanguageBcp47,
+} from "./languageNames.js";
+
+const DEFAULT_LOCALE = detectDefaultUiLocale();
+let currentLocale = DEFAULT_LOCALE;
+const subscribers = new Set();
+let storageInitialized = false;
+
+function notifySubscribers() {
+  subscribers.forEach((fn) => {
+    try {
+      fn(currentLocale);
+    } catch {
+      // ignore subscriber errors
+    }
+  });
+}
+
+function applyLocale(rawLocale) {
+  const normalized = normalizeUiLocale(rawLocale);
+  if (normalized && normalized !== currentLocale) {
+    currentLocale = normalized;
+    notifySubscribers();
+  }
+}
+
+function ensureStorageSync() {
+  if (storageInitialized) return;
+  storageInitialized = true;
+  if (typeof chrome === "undefined" || !chrome?.storage?.local) return;
+
+  try {
+    chrome.storage.local
+      .get({ uiLanguage: DEFAULT_LOCALE })
+      .then((res) => {
+        if (res?.uiLanguage) {
+          applyLocale(res.uiLanguage);
+        }
+      })
+      .catch(() => {});
+
+    chrome.storage.onChanged?.addListener((changes, areaName) => {
+      if (areaName !== "local") return;
+      if (Object.prototype.hasOwnProperty.call(changes, "uiLanguage")) {
+        applyLocale(changes.uiLanguage?.newValue || DEFAULT_LOCALE);
+      }
+    });
+  } catch {
+    // ignore storage access issues in restricted contexts
+  }
+}
+
+ensureStorageSync();
+
+export function getUiLocale() {
+  return currentLocale;
+}
+
+export function setUiLocale(nextLocale) {
+  const normalized = normalizeUiLocale(nextLocale) || DEFAULT_LOCALE;
+  if (normalized !== currentLocale) {
+    currentLocale = normalized;
+    notifySubscribers();
+  }
+  if (typeof chrome !== "undefined" && chrome?.storage?.local) {
+    return chrome.storage.local.set({ uiLanguage: normalized }).catch(() => {});
+  }
+  return Promise.resolve();
+}
+
+export function subscribeUiLocale(listener) {
+  subscribers.add(listener);
+  return () => {
+    subscribers.delete(listener);
+  };
+}
+
+export function translate(key, vars, localeOverride) {
+  const locale = normalizeUiLocale(localeOverride) || currentLocale || "en";
+  const dict = MESSAGES[locale] || MESSAGES.en;
+  let template = dict[key];
+  if (template === undefined) {
+    template = MESSAGES.en[key] ?? MESSAGES.zh[key] ?? key;
+  }
+  if (!vars || typeof template !== "string") {
+    return template;
+  }
+  return template.replace(/\{(\w+)\}/g, (match, name) =>
+    Object.prototype.hasOwnProperty.call(vars, name) && vars[name] != null
+      ? String(vars[name])
+      : match
+  );
+}
+
+export const t = translate;
+
+export function getLocalizedLanguageName(zhName, localeOverride) {
+  const locale = normalizeUiLocale(localeOverride) || currentLocale || "en";
+  const autoLabel = translate("lang.autoDetect", null, locale);
+  return resolveLanguageName(zhName, locale, autoLabel);
+}
+
+export function getServiceDisplayName(serviceId, customServices, localeOverride) {
+  const locale = normalizeUiLocale(localeOverride) || currentLocale || "en";
+  if (serviceId === "OfficialLLM") return translate("service.officialLlm", null, locale);
+  if (serviceId === "Microsoft") return translate("service.microsoft", null, locale);
+  if (serviceId === "GoogleWeb") return translate("service.google", null, locale);
+  const match = (customServices || []).find((item) => item?.id === serviceId);
+  return match?.name || serviceId || translate("service.unselected", null, locale);
+}
+
+export function useI18n() {
+  const [locale, setLocaleState] = React.useState(currentLocale);
+
+  React.useEffect(() => {
+    ensureStorageSync();
+    setLocaleState(currentLocale);
+    return subscribeUiLocale((next) => {
+      setLocaleState(next);
+    });
+  }, []);
+
+  const boundT = React.useCallback(
+    (key, vars) => translate(key, vars, locale),
+    [locale]
+  );
+
+  const boundLangName = React.useCallback(
+    (zhName) => getLocalizedLanguageName(zhName, locale),
+    [locale]
+  );
+
+  const boundServiceName = React.useCallback(
+    (serviceId, customServices) => getServiceDisplayName(serviceId, customServices, locale),
+    [locale]
+  );
+
+  return {
+    locale,
+    setLocale: setUiLocale,
+    t: boundT,
+    getLanguageName: boundLangName,
+    getServiceName: boundServiceName,
+  };
+}
+
+export {
+  UI_LANGUAGES,
+  SUPPORTED_UI_LOCALE_CODES,
+  UI_LOCALE_TO_BCP47,
+  normalizeUiLocale,
+  detectDefaultUiLocale,
+  getLanguageBcp47,
+};

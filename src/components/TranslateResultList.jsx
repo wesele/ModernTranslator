@@ -20,6 +20,7 @@ import * as mod_76352 from "./TranslateErrorView.jsx";
 import * as mod_25148 from "../shared/hooks/useStorage.js";
 import * as mod_67116 from "../shared/messaging/index.js";
 import { isCustomOpenAIServiceId } from "../shared/openaiUtils.js";
+import { useI18n } from "../shared/i18n/index.js";
 import * as mod_31085 from "react/jsx-runtime";
 async function P(e) {
   mod_67116
@@ -32,6 +33,7 @@ async function P(e) {
     });
 }
 function T(e) {
+  const { t: tr } = useI18n();
   const t = e.uri,
     a = e.size,
     n = e.style;
@@ -45,7 +47,7 @@ function T(e) {
       minimal
       disabled={!t}
       onClick={t ? () => P(t) : undefined}
-      title={t ? "朗读" : "不支持此语种"}
+      title={t ? tr("result.speak") : tr("result.ttsUnsupported")}
     />
   );
 }
@@ -123,6 +125,7 @@ function N(e) {
       onCollapseChange: O,
       portalContainer: K,
     } = e,
+    { t: tr, getLanguageName, getServiceName } = useI18n(),
     [_] = mod_25148.A(R),
     $ = L[I],
     M = "small" === I,
@@ -133,10 +136,13 @@ function N(e) {
       ? (_?.customOpenAIServices || []).find((svc) => svc?.id === t)
       : null,
     H = customOpenAIMatch
-      ? { id: t, name: customOpenAIMatch.name || "自定义大模型" }
-      : mod_18785.v.find((e) => e.id === t) || {
-          name: t,
+      ? { id: t, name: customOpenAIMatch.name || tr("service.customDefault") }
+      : {
           id: t,
+          name:
+            getServiceName(t, _?.customOpenAIServices) ||
+            mod_18785.v.find((svc) => svc.id === t)?.name ||
+            t,
         },
     Y = "GoogleWeb" === t && !!_?.googleHidePhonetic,
     Z = () => {
@@ -161,17 +167,17 @@ function N(e) {
       d &&
         g &&
         A(d, t).then(
-          (e) => {
-            e ? Z() : window.alert("自动复制翻译结果失败，请稍后重试。");
+          (ok) => {
+            ok ? Z() : window.alert(tr("result.autoCopyFail"));
           },
-          (e) => {
-            window.alert(`自动复制翻译结果时发生了一个错误：${e?.message}`);
+          (err) => {
+            window.alert(tr("result.autoCopyErr", { msg: err?.message || "" }));
           }
         );
     }, [d, g, t]));
   const J =
     mod_12752.K[t] ||
-    (isCustomOpenAIServiceId(t) ? chrome.runtime.getURL("chatgpt.jpg") : undefined);
+    (isCustomOpenAIServiceId(t) ? chrome.runtime.getURL("custom-llm.svg") : undefined);
   return (
     <Card className="result-block" onClick={E}>
       <div className="legend">
@@ -197,7 +203,7 @@ function N(e) {
                 portalContainer={K}
               >
                 <span className="source">
-                  <span className="source-text">{d.from}</span>
+                  <span className="source-text">{getLanguageName(d.from)}</span>
                   <Icon icon="caret-down" size={12} />
                 </span>
               </mod_25812.A>
@@ -224,7 +230,7 @@ function N(e) {
               minimal
               small={M}
               large={U}
-              title={N ? "展开" : "收起"}
+              title={N ? tr("result.expand") : tr("result.collapse")}
               onClick={() => {
                 O && O(!N);
               }}
@@ -235,11 +241,11 @@ function N(e) {
             onClick={() => {
               d &&
                 A(d, t).then(
-                  (e) => {
-                    e ? Z() : window.alert("复制翻译结果失败，请稍后重试。");
+                  (ok) => {
+                    ok ? Z() : window.alert(tr("result.copyFail"));
                   },
-                  (e) => {
-                    window.alert(`复制翻译结果时发生了一个错误：${e?.message}`);
+                  (err) => {
+                    window.alert(tr("result.copyErr", { msg: err?.message || "" }));
                   }
                 );
             }}
@@ -249,7 +255,7 @@ function N(e) {
             small={M}
             large={U}
             intent={q}
-            title="复制翻译结果"
+            title={tr("result.copy")}
           />
           <Button
             disabled={!d?.link}
@@ -259,7 +265,7 @@ function N(e) {
             minimal
             small={M}
             large={U}
-            title="查看详细结果"
+            title={tr("result.viewDetail")}
           />
         </div>
       </div>

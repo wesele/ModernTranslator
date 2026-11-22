@@ -1,7 +1,9 @@
 import * as React from "react";
-import * as mod_31085 from "react/jsx-runtime";
-function i(e) {
+import { useI18n } from "../shared/i18n/index.js";
+
+function ExpandableText(e) {
   const { children: s } = e,
+    { t } = useI18n(),
     [a, i] = React.useState(false),
     [o, r] = React.useState(null);
   React.useEffect(() => {
@@ -34,10 +36,10 @@ function i(e) {
             i(true);
           }}
         >
-          展开
+          {t("result.expand")}
         </a>
       )}
     </span>
   );
 }
-export { i as A };
+export { ExpandableText as A };

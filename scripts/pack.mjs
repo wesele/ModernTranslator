@@ -153,6 +153,33 @@ function validateDist(files) {
     }
   }
 
+  for (const group of manifest.web_accessible_resources || []) {
+    for (const resPath of group.resources || []) {
+      if (!relSet.has(resPath)) {
+        throw new Error(`web_accessible_resources entry missing in dist/: ${resPath}`);
+      }
+    }
+  }
+
+  const localeFiles = files.filter((f) => /^_locales\/[^/]+\/messages\.json$/.test(f.relPath));
+  for (const locFile of localeFiles) {
+    const messages = JSON.parse(fs.readFileSync(locFile.fullPath, "utf8"));
+    const desc = messages?.description?.message;
+    if (typeof desc === "string" && desc.length > 132) {
+      throw new Error(
+        `Chrome Web Store limit exceeded: ${locFile.relPath} description is ${desc.length} chars (max 132)`
+      );
+    }
+  }
+
+  if (typeof manifest.short_name === "string" && !manifest.short_name.startsWith("__MSG_")) {
+    if (manifest.short_name.length > 12) {
+      console.warn(
+        `Warning: manifest.short_name ("${manifest.short_name}") is ${manifest.short_name.length} chars (recommended <= 12)`
+      );
+    }
+  }
+
   return manifest;
 }
 

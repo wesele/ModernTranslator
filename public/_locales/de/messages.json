@@ -1,0 +1,22 @@
+{
+   "commands_translate": {
+      "message": "Ausgewählten Text übersetzen"
+   },
+   "commonds_page": {
+      "message": "Gesamte Webseite übersetzen"
+   },
+   "commonds_pageSwitchMode": {
+      "message": "Zwischen zweisprachiger / Original- / übersetzter Ansicht wechseln"
+   },
+   "commonds_play": {
+      "message": "Text vorlesen"
+   },
+   "description": {
+      "description": "Extension description.",
+      "message": "Kostenloser Auswahl- & Seitenübersetzer mit Zweisprachen-Ansicht, LLM-Streaming, Microsoft/Google & eigenen OpenAI-APIs."
+   },
+   "name": {
+      "description": "Extension name.",
+      "message": "Modern Translator"
+   }
+}

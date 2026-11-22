@@ -1,6 +1,7 @@
 import * as mod_29842 from "../shared/errors/index.js";
 import { Classes, AnchorButton, OL, NonIdealState } from "@blueprintjs/core";
 import * as mod_67116 from "../shared/messaging/index.js";
+import { useI18n } from "../shared/i18n/index.js";
 
 function openSettings() {
   mod_67116._({
@@ -36,7 +37,7 @@ function ErrorDetail({ error }) {
   );
 }
 
-function ErrorAction({ error }) {
+function ErrorAction({ error, t }) {
   switch (error.type) {
     case mod_29842.VC.NEED_KEY:
     case mod_29842.VC.NO_POINTS:
@@ -46,7 +47,7 @@ function ErrorAction({ error }) {
           onClick={openSettings}
           style={{ marginRight: 15 }}
         >
-          前往配置页面
+          {t("error.openSettings")}
         </AnchorButton>
       );
     case undefined:
@@ -56,7 +57,7 @@ function ErrorAction({ error }) {
           onClick={() => window.location.reload()}
           style={{ marginRight: 15 }}
         >
-          刷新网页
+          {t("error.refreshPage")}
         </AnchorButton>
       );
     default:
@@ -65,21 +66,22 @@ function ErrorAction({ error }) {
 }
 
 function TranslateErrorView({ error, onRetry }) {
+  const { t } = useI18n();
   return (
     <NonIdealState
       description={<ErrorDetail error={error} />}
       action={
         <div style={{ display: "flex" }}>
-          <ErrorAction error={error} />
+          <ErrorAction error={error} t={t} />
           <AnchorButton small onClick={onRetry}>
-            重试
+            {t("common.retry")}
           </AnchorButton>
         </div>
       }
     >
       {!error.type && (
         <p className={`${Classes.TEXT_MUTED} ${Classes.TEXT_SMALL}`}>
-          出现 Extension context invalidated 错误时刷新网页即可恢复。
+          {t("error.contextInvalidatedHint")}
         </p>
       )}
     </NonIdealState>

@@ -716,9 +716,24 @@ body {
   outline: none;
 }
 
-.delivery-limit-input:focus {
+.delivery-limit-input:focus,
+.delivery-concurrency-input:focus {
   border-color: var(--ndt-text-secondary);
   box-shadow: 0 0 0 2px var(--ndt-focus-ring);
+}
+
+.delivery-concurrency-input {
+  width: 64px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 7px;
+  border: 1px solid var(--ndt-border);
+  background-color: var(--ndt-bg-window);
+  color: var(--ndt-text-primary);
+  font-family: var(--ndt-font-mono);
+  font-size: 12px;
+  text-align: center;
+  outline: none;
 }
 
 .delivery-limit-unit {

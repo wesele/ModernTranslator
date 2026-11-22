@@ -10,18 +10,24 @@ import * as messaging from "../shared/messaging/index.js";
 import { g2 as defaultOptions } from "../shared/constants/defaults.js";
 import { VI as ServiceId } from "../shared/constants/services.js";
 import {
+  DEFAULT_CUSTOM_LLM_MAX_CONCURRENCY,
+  DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY,
+  MAX_LLM_MAX_CONCURRENCY,
+  MIN_LLM_MAX_CONCURRENCY,
   OFFICIAL_LLM_ID,
-  OFFICIAL_LLM_NAME,
   OFFICIAL_LLM_BASE_URL,
   OFFICIAL_LLM_PORTAL_URL,
   fetchOfficialQuotaRmb,
   fetchOpenAIModels,
   formatQuotaRmb,
+  normalizeLlmConcurrency,
   normalizeOpenAIBaseUrl,
   readApiErrorDetail,
   resolveChatCompletionsUrl,
   resolveOfficialQuotaOrigin,
 } from "../shared/openaiUtils.js";
+import { UiLanguageSelect } from "../components/UiLanguageSelect.jsx";
+import { UI_LOCALE_TO_BCP47, useI18n } from "../shared/i18n/index.js";
 
 if (typeof document !== "undefined") {
   new InteractionModeEngine(document.documentElement, Classes.FOCUS_DISABLED).start();
@@ -31,7 +37,6 @@ const SETTINGS_STORAGE_DEFAULTS = pick(defaultOptions, [
   "darkMode",
   "selectedAPIs",
   "pageTrsApi",
-  "googleType",
   "googleMirror",
   "googleHidePhonetic",
   "officialLLMBaseUrl",
@@ -41,51 +46,39 @@ const SETTINGS_STORAGE_DEFAULTS = pick(defaultOptions, [
   "officialLLMBatchEnabled",
   "officialLLMBatchMaxBytes",
   "officialLLMStreamEnabled",
+  "officialLLMMaxConcurrency",
   "customOpenAIServices",
 ]);
 
-const THEME_OPTIONS = [
-  { value: "system", label: "系统" },
-  { value: "close", label: "浅色" },
-  { value: "open", label: "深色" },
-];
-
-const GOOGLE_MODE_OPTIONS = [
-  { value: "fast", label: "快速批量接口 (推荐)" },
-  { value: "accuracy", label: "高准确率网页窗口" },
-];
-
-function getServiceDisplayName(serviceId, customServices) {
-  if (serviceId === OFFICIAL_LLM_ID) return OFFICIAL_LLM_NAME;
-  if (serviceId === ServiceId.Microsoft) return "微软翻译";
-  if (serviceId === ServiceId.Google) return "谷歌翻译";
-  const match = (customServices || []).find((item) => item.id === serviceId);
-  return match?.name || serviceId || "未选择";
-}
+const TEST_PROBE_BY_LOCALE = {
+  zh: { sourceText: "Hello, world!", destZhName: "中文(简体)", promptLang: "Simplified Chinese" },
+  en: { sourceText: "你好，世界！", destZhName: "英语", promptLang: "English" },
+  es: { sourceText: "Hello, world!", destZhName: "西班牙语", promptLang: "Spanish" },
+  fr: { sourceText: "Hello, world!", destZhName: "法语", promptLang: "French" },
+  de: { sourceText: "Hello, world!", destZhName: "德语", promptLang: "German" },
+  ja: { sourceText: "Hello, world!", destZhName: "日语", promptLang: "Japanese" },
+  ko: { sourceText: "Hello, world!", destZhName: "韩语", promptLang: "Korean" },
+};
 
 function ServiceGlyph({ kind }) {
   if (kind === "official") {
     return <img src={chrome.runtime.getURL("official-llm.svg")} alt="" />;
   }
   if (kind === "microsoft") {
-    return <img src={chrome.runtime.getURL("microsoft.png")} alt="" />;
+    return <img src={chrome.runtime.getURL("microsoft-engine.svg")} alt="" />;
   }
   if (kind === "google") {
-    return <img src={chrome.runtime.getURL("google.ico")} alt="" />;
+    return <img src={chrome.runtime.getURL("google-engine.svg")} alt="" />;
   }
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="4" y="4" width="16" height="16" rx="4" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M8.5 10L11 12L8.5 14M12.5 14H15.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  return <img src={chrome.runtime.getURL("custom-llm.svg")} alt="" />;
 }
 
 function UsageToggleCard({ checked, onToggle, isPageDefault, onTogglePageDefault }) {
+  const { t } = useI18n();
   return (
     <div className="usage-merged-row">
       <div className="usage-merged-cell">
-        <span className="usage-row-title">用于划词翻译</span>
+        <span className="usage-row-title">{t("settings.useForSelection")}</span>
         <button
           type="button"
           role="switch"
@@ -96,7 +89,7 @@ function UsageToggleCard({ checked, onToggle, isPageDefault, onTogglePageDefault
       </div>
 
       <div className="usage-merged-cell">
-        <span className="usage-row-title">用于全文翻译</span>
+        <span className="usage-row-title">{t("settings.useForPage")}</span>
         <button
           type="button"
           role="switch"
@@ -113,21 +106,31 @@ function LlmDeliveryConfigRow({
   batchEnabled,
   batchMaxBytes,
   streamEnabled,
+  maxConcurrency,
+  defaultMaxConcurrency,
   onBatchChange,
   onBatchMaxBytesChange,
   onStreamChange,
+  onMaxConcurrencyChange,
 }) {
+  const { t } = useI18n();
   const [limitText, setLimitText] = React.useState(String(batchMaxBytes ?? 10000));
+  const resolvedConcurrency = normalizeLlmConcurrency(maxConcurrency, defaultMaxConcurrency);
+  const [concurrencyText, setConcurrencyText] = React.useState(String(resolvedConcurrency));
 
   React.useEffect(() => {
     setLimitText(String(batchMaxBytes ?? 10000));
   }, [batchMaxBytes]);
 
+  React.useEffect(() => {
+    setConcurrencyText(String(resolvedConcurrency));
+  }, [resolvedConcurrency]);
+
   return (
     <div className="delivery-row">
       <div className="delivery-group">
         <div className="delivery-toggle">
-          <span className="delivery-label">批量发送</span>
+          <span className="delivery-label">{t("settings.batchSend")}</span>
           <button
             type="button"
             role="switch"
@@ -139,7 +142,7 @@ function LlmDeliveryConfigRow({
 
         {batchEnabled && (
           <div className="delivery-limit-box">
-            <span className="delivery-limit-label">单次上限</span>
+            <span className="delivery-limit-label">{t("settings.batchMaxLimit")}</span>
             <div className="delivery-limit-input-wrap">
               <input
                 type="number"
@@ -163,27 +166,58 @@ function LlmDeliveryConfigRow({
                   onBatchMaxBytesChange(clamped);
                 }}
               />
-              <span className="delivery-limit-unit">字节</span>
+              <span className="delivery-limit-unit">{t("settings.bytesUnit")}</span>
             </div>
           </div>
         )}
       </div>
 
-      <div className="delivery-toggle">
-        <span className="delivery-label">流式调用</span>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={streamEnabled}
-          className={`ndt-switch ${streamEnabled ? "is-checked" : ""}`}
-          onClick={() => onStreamChange(!streamEnabled)}
-        />
+      <div className="delivery-group">
+        <div className="delivery-toggle">
+          <span className="delivery-label">{t("settings.maxConcurrency")}</span>
+          <input
+            type="number"
+            min={MIN_LLM_MAX_CONCURRENCY}
+            max={MAX_LLM_MAX_CONCURRENCY}
+            step={1}
+            className="delivery-concurrency-input"
+            value={concurrencyText}
+            onChange={(e) => {
+              const raw = e.target.value;
+              setConcurrencyText(raw);
+              const num = parseInt(raw, 10);
+              if (Number.isFinite(num) && num >= MIN_LLM_MAX_CONCURRENCY) {
+                onMaxConcurrencyChange(Math.min(MAX_LLM_MAX_CONCURRENCY, num));
+              }
+            }}
+            onBlur={() => {
+              const num = parseInt(concurrencyText, 10);
+              const clamped = Number.isFinite(num)
+                ? Math.min(MAX_LLM_MAX_CONCURRENCY, Math.max(MIN_LLM_MAX_CONCURRENCY, num))
+                : defaultMaxConcurrency;
+              setConcurrencyText(String(clamped));
+              onMaxConcurrencyChange(clamped);
+            }}
+          />
+        </div>
+
+        <div className="delivery-toggle">
+          <span className="delivery-label">{t("settings.streamCall")}</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={streamEnabled}
+            className={`ndt-switch ${streamEnabled ? "is-checked" : ""}`}
+            onClick={() => onStreamChange(!streamEnabled)}
+          />
+        </div>
       </div>
     </div>
   );
 }
 
 function SecretKeyInput({ value, onChange, placeholder }) {
+  const { t } = useI18n();
   const [visible, setVisible] = React.useState(false);
 
   return (
@@ -202,7 +236,7 @@ function SecretKeyInput({ value, onChange, placeholder }) {
           <button
             type="button"
             className="ndt-icon-btn"
-            title="清空密钥"
+            title={t("settings.clearKey")}
             onClick={() => onChange("")}
           >
             <Icon icon="cross" size={12} />
@@ -211,7 +245,7 @@ function SecretKeyInput({ value, onChange, placeholder }) {
         <button
           type="button"
           className="ndt-icon-btn"
-          title={visible ? "隐藏密钥" : "显示密钥"}
+          title={visible ? t("settings.hideKey") : t("settings.showKey")}
           onClick={() => setVisible((v) => !v)}
         >
           <Icon icon={visible ? "eye-off" : "eye-open"} size={13} />
@@ -222,6 +256,7 @@ function SecretKeyInput({ value, onChange, placeholder }) {
 }
 
 function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
+  const { t } = useI18n();
   const [isOpen, setIsOpen] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [models, setModels] = React.useState([]);
@@ -277,17 +312,17 @@ function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
       if (controller.signal.aborted) return;
       setModels(list);
       if (!list.length) {
-        setFetchError("接口返回了空的模型列表，可在下方手动输入模型名");
+        setFetchError(t("settings.modelEmptyListError"));
       }
     } catch (err) {
       if (err?.name === "AbortError") return;
-      setFetchError(err?.message || "获取模型列表失败");
+      setFetchError(err?.message || t("settings.modelFetchFail"));
     } finally {
       if (!controller.signal.aborted) {
         setLoading(false);
       }
     }
-  }, [baseUrl, apiKey]);
+  }, [baseUrl, apiKey, t]);
 
   const handleToggleOpen = () => {
     const nextOpen = !isOpen;
@@ -316,7 +351,7 @@ function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
         onClick={handleToggleOpen}
       >
         <span className={`model-dropdown-value ${model ? "" : "is-placeholder"}`}>
-          {model || "点击下拉获取模型列表..."}
+          {model || t("settings.modelDropdownPlaceholder")}
         </span>
         <span className="model-dropdown-right">
           {loading && <Icon icon="refresh" size={12} className="ndt-spin" />}
@@ -331,14 +366,14 @@ function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
             <input
               type="text"
               value={search}
-              placeholder="筛选模型 ID..."
+              placeholder={t("settings.modelFilterPlaceholder")}
               autoFocus
               onChange={(e) => setSearch(e.target.value)}
             />
             <button
               type="button"
               className="ndt-icon-btn"
-              title="重新获取模型列表"
+              title={t("settings.modelRefreshTitle")}
               onClick={loadModels}
             >
               <Icon icon="refresh" size={12} className={loading ? "ndt-spin" : ""} />
@@ -347,7 +382,7 @@ function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
 
           {loading && (
             <div className="model-popover-status is-loading">
-              <span>正在从 /models 获取可用模型...</span>
+              <span>{t("settings.modelLoading")}</span>
             </div>
           )}
 
@@ -359,7 +394,7 @@ function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
                 className="ndt-btn is-compact"
                 onClick={loadModels}
               >
-                重试
+                {t("common.retry")}
               </button>
             </div>
           )}
@@ -387,7 +422,7 @@ function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
               })
             ) : (
               !loading &&
-              !fetchError && <div className="model-empty-hint">没有匹配的模型</div>
+              !fetchError && <div className="model-empty-hint">{t("settings.modelNoMatch")}</div>
             )}
           </div>
 
@@ -404,7 +439,7 @@ function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
             <input
               type="text"
               value={manualModel}
-              placeholder="或手动输入模型 ID（如 gpt-4o-mini）"
+              placeholder={t("settings.modelManualPlaceholder")}
               onChange={(e) => setManualModel(e.target.value)}
             />
             <button
@@ -412,7 +447,7 @@ function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
               className="ndt-btn is-compact"
               disabled={!manualModel.trim()}
             >
-              确定
+              {t("common.confirm")}
             </button>
           </form>
         </div>
@@ -421,19 +456,20 @@ function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
   );
 }
 
-async function runOpenAIConnectionTest({ baseUrl, apiKey, model, requireKey }) {
+async function runOpenAIConnectionTest({ baseUrl, apiKey, model, requireKey, locale, t }) {
   const cleanedBase = normalizeOpenAIBaseUrl(baseUrl);
   if (!cleanedBase) {
-    throw new Error("请先填写接口地址 (Base URL)");
+    throw new Error(t("settings.testNeedBaseUrl"));
   }
   if (requireKey && !String(apiKey || "").trim()) {
-    throw new Error("请先填写 API Key");
+    throw new Error(t("settings.testNeedApiKey"));
   }
   const trimmedModel = String(model || "").trim();
   if (!trimmedModel) {
-    throw new Error("请先选择或填写模型");
+    throw new Error(t("settings.testNeedModel"));
   }
 
+  const probe = TEST_PROBE_BY_LOCALE[locale] || TEST_PROBE_BY_LOCALE.en;
   const endpoint = resolveChatCompletionsUrl(cleanedBase);
   const headers = { "Content-Type": "application/json" };
   if (String(apiKey || "").trim()) {
@@ -446,7 +482,12 @@ async function runOpenAIConnectionTest({ baseUrl, apiKey, model, requireKey }) {
     headers,
     body: JSON.stringify({
       model: trimmedModel,
-      messages: [{ role: "user", content: "Translate to Simplified Chinese only: Hello, world!" }],
+      messages: [
+        {
+          role: "user",
+          content: `Translate to ${probe.promptLang} only: ${probe.sourceText}`,
+        },
+      ],
     }),
   });
   if (!res.ok) {
@@ -455,25 +496,24 @@ async function runOpenAIConnectionTest({ baseUrl, apiKey, model, requireKey }) {
   const json = await res.json();
   const output = json?.choices?.[0]?.message?.content?.trim();
   if (!output) {
-    throw new Error("接口返回成功，但未包含译文内容");
+    throw new Error(t("settings.testEmptyOutput"));
   }
   const ms = Math.round(performance.now() - startedAt);
   return { ms, output };
 }
 
 function ServiceCacheBar({ count, loading, clearing, onClear }) {
+  const { t } = useI18n();
   return (
     <div className="service-cache-bar">
       <div className="service-cache-info">
         <div className="service-cache-title-row">
-          <span className="service-cache-title">全局翻译缓存</span>
+          <span className="service-cache-title">{t("settings.cacheTitle")}</span>
           <span className="service-cache-count">
-            {loading ? "读取中..." : `已缓存 ${count} 个`}
+            {loading ? t("settings.cacheLoading") : t("settings.cacheCount", { count })}
           </span>
         </div>
-        <span className="service-cache-desc">
-          单个翻译单位小于 5 个词时自动缓存（按翻译服务隔离）
-        </span>
+        <span className="service-cache-desc">{t("settings.cacheDesc")}</span>
       </div>
       <button
         type="button"
@@ -482,7 +522,7 @@ function ServiceCacheBar({ count, loading, clearing, onClear }) {
         onClick={onClear}
       >
         <Icon icon={clearing ? "refresh" : "trash"} size={12} className={clearing ? "ndt-spin" : ""} />
-        <span>{clearing ? "清空中..." : "清空缓存"}</span>
+        <span>{clearing ? t("settings.cacheClearing") : t("settings.cacheClearBtn")}</span>
       </button>
     </div>
   );
@@ -490,6 +530,12 @@ function ServiceCacheBar({ count, loading, clearing, onClear }) {
 
 function SettingsApp() {
   useDarkMode();
+  const { locale, t, getServiceName } = useI18n();
+
+  React.useEffect(() => {
+    document.title = t("settings.pageTitle");
+    document.documentElement.lang = UI_LOCALE_TO_BCP47[locale] || "en";
+  }, [locale, t]);
 
   const [settings, setSettings] = useStorage(SETTINGS_STORAGE_DEFAULTS);
   const [activeId, setActiveId] = React.useState(OFFICIAL_LLM_ID);
@@ -596,6 +642,10 @@ function SettingsApp() {
   const officialBatchEnabled = settings?.officialLLMBatchEnabled !== false;
   const officialBatchMaxBytes = settings?.officialLLMBatchMaxBytes ?? 10000;
   const officialStreamEnabled = settings?.officialLLMStreamEnabled !== false;
+  const officialMaxConcurrency = normalizeLlmConcurrency(
+    settings?.officialLLMMaxConcurrency,
+    DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY
+  );
   const officialReady = Boolean(officialKey.trim() && officialModel.trim());
 
   const [officialQuota, setOfficialQuota] = React.useState({
@@ -749,7 +799,10 @@ function SettingsApp() {
     const count = customServices.length + 1;
     const svc = {
       id: `custom-openai-${Date.now().toString(36)}`,
-      name: count === 1 ? "OpenAI 兼容服务" : `OpenAI 兼容服务 ${count}`,
+      name:
+        count === 1
+          ? t("service.customOpenAI")
+          : t("service.customOpenAINumbered", { n: count }),
       baseUrl: "",
       apiKey: "",
       model: "",
@@ -757,6 +810,7 @@ function SettingsApp() {
       batchEnabled: true,
       batchMaxBytes: 10000,
       streamEnabled: true,
+      maxConcurrency: DEFAULT_CUSTOM_LLM_MAX_CONCURRENCY,
     };
     updateStorage((draft) => {
       if (!Array.isArray(draft.customOpenAIServices)) {
@@ -805,12 +859,14 @@ function SettingsApp() {
           apiKey: officialKey,
           model: officialModel,
           requireKey: true,
+          locale,
+          t,
         });
         setTestState({
           serviceId: id,
           loading: false,
           ok: true,
-          message: `连接正常 · ${res.ms}ms · "${res.output}"`,
+          message: t("settings.testSuccess", { ms: res.ms, output: res.output }),
         });
         refreshOfficialQuota();
         return;
@@ -822,47 +878,50 @@ function SettingsApp() {
           apiKey: activeCustomService.apiKey,
           model: activeCustomService.model,
           requireKey: false,
+          locale,
+          t,
         });
         setTestState({
           serviceId: id,
           loading: false,
           ok: true,
-          message: `连接正常 · ${res.ms}ms · "${res.output}"`,
+          message: t("settings.testSuccess", { ms: res.ms, output: res.output }),
         });
         return;
       }
 
+      const probe = TEST_PROBE_BY_LOCALE[locale] || TEST_PROBE_BY_LOCALE.en;
       const startedAt = performance.now();
       const result = await messaging._({
         action: "translate",
         data: {
           apiCode: id,
-          text: "Hello, world!",
-          destinations: ["中文(简体)"],
+          text: probe.sourceText,
+          destinations: [probe.destZhName],
           source: "",
           skipCache: true,
         },
       });
       if (result?.error) {
-        throw new Error(result.error.message || "翻译返回错误");
+        throw new Error(result.error.message || t("settings.testReturnError"));
       }
       const text = result?.result?.join(" ") || "";
       if (!text) {
-        throw new Error("未收到有效译文");
+        throw new Error(t("settings.testNoValidResult"));
       }
       const ms = Math.round(performance.now() - startedAt);
       setTestState({
         serviceId: id,
         loading: false,
         ok: true,
-        message: `连接正常 · ${ms}ms · "${text}"`,
+        message: t("settings.testSuccess", { ms, output: text }),
       });
     } catch (err) {
       setTestState({
         serviceId: id,
         loading: false,
         ok: false,
-        message: err?.message || "连接测试失败",
+        message: err?.message || t("settings.testFail"),
       });
     }
   };
@@ -891,14 +950,12 @@ function SettingsApp() {
               </div>
               <div>
                 <div className="inspector-heading-row">
-                  <h1 className="inspector-heading">{OFFICIAL_LLM_NAME}</h1>
+                  <h1 className="inspector-heading">{t("service.officialLlm")}</h1>
                   <span className={`inspector-badge ${officialReady ? "is-ready" : "is-warn"}`}>
-                    {officialReady ? "已就绪" : "待配置"}
+                    {officialReady ? t("settings.statusReady") : t("settings.statusPendingConfig")}
                   </span>
                 </div>
-                <p className="inspector-subtitle">
-                  本扩展完全免费且为公益性质；由友情赞助商提供的大模型接口，支持网页全文与划词翻译
-                </p>
+                <p className="inspector-subtitle">{t("settings.officialSubtitle")}</p>
               </div>
             </div>
 
@@ -915,14 +972,17 @@ function SettingsApp() {
                   disabled={officialQuota.loading}
                   title={
                     officialQuota.data.unlimitedQuota
-                      ? "该 API Key 本身不限额（实际消费受所属用户账户余额限制）· 点击刷新"
-                      : `剩余内部额度 ${officialQuota.data.totalAvailable.toLocaleString()} · 汇率 1 USD = ¥${officialQuota.data.usdExchangeRate} · 点击刷新`
+                      ? t("settings.quotaUnlimitedTooltip")
+                      : t("settings.quotaLimitedTooltip", {
+                          total: officialQuota.data.totalAvailable.toLocaleString(),
+                          rate: officialQuota.data.usdExchangeRate,
+                        })
                   }
                 >
-                  <span className="official-quota-label">剩余额度</span>
+                  <span className="official-quota-label">{t("settings.quotaLabel")}</span>
                   <span className="official-quota-value">
                     {officialQuota.data.unlimitedQuota
-                      ? "不限额"
+                      ? t("settings.quotaUnlimited")
                       : formatQuotaRmb(officialQuota.data.rmb)}
                   </span>
                 </button>
@@ -934,7 +994,7 @@ function SettingsApp() {
                 rel="noreferrer"
               >
                 <Icon icon="key" size={13} />
-                <span>免费获取</span>
+                <span>{t("settings.freeGet")}</span>
                 <Icon icon="share" size={11} />
               </a>
             </div>
@@ -951,14 +1011,14 @@ function SettingsApp() {
             <div className="field-card">
               <div className="field-block">
                 <div className="field-head">
-                  <label className="field-title">接口地址 (URL)</label>
+                  <label className="field-title">{t("settings.baseUrlLabel")}</label>
                   {officialBaseUrl !== OFFICIAL_LLM_BASE_URL && (
                     <button
                       type="button"
                       className="field-action-link"
                       onClick={() => updateStorage({ officialLLMBaseUrl: OFFICIAL_LLM_BASE_URL })}
                     >
-                      恢复默认地址
+                      {t("settings.restoreDefaultUrl")}
                     </button>
                   )}
                 </div>
@@ -983,7 +1043,7 @@ function SettingsApp() {
               </div>
 
               <div className="field-block">
-                <label className="field-title">模型 (Model)</label>
+                <label className="field-title">{t("settings.modelLabel")}</label>
                 <div className="model-test-row">
                   <ModelSelectorDropdown
                     baseUrl={officialBaseUrl || OFFICIAL_LLM_BASE_URL}
@@ -1002,7 +1062,9 @@ function SettingsApp() {
                       size={13}
                       className={testState.loading ? "ndt-spin" : ""}
                     />
-                    <span>{testState.loading ? "测试中..." : "测试连通性"}</span>
+                    <span>
+                      {testState.loading ? t("settings.testing") : t("settings.testConnection")}
+                    </span>
                   </button>
                 </div>
                 {renderTestStatus(OFFICIAL_LLM_ID)}
@@ -1010,19 +1072,23 @@ function SettingsApp() {
 
               <div className="field-block">
                 <div className="field-head">
-                  <span className="field-title">高级提示词（选填）</span>
+                  <span className="field-title">{t("settings.promptLabel")}</span>
                   <button
                     type="button"
                     className="field-action-link"
                     onClick={() => setShowPromptEditor((v) => !v)}
                   >
-                    {showPromptEditor ? "收起" : officialPrompt ? "已自定义 · 编辑" : "展开设置"}
+                    {showPromptEditor
+                      ? t("settings.promptCollapse")
+                      : officialPrompt
+                        ? t("settings.promptEditCustom")
+                        : t("settings.promptExpand")}
                   </button>
                 </div>
                 {showPromptEditor && (
                   <textarea
                     className="ndt-textarea"
-                    placeholder="留空使用内置专业翻译指令；如需自定义，划词单条翻译请包含 {{text}} 与 {{target}}。"
+                    placeholder={t("settings.promptPlaceholder")}
                     value={officialPrompt}
                     onChange={(e) => updateStorage({ officialLLMPrompt: e.target.value })}
                   />
@@ -1034,9 +1100,12 @@ function SettingsApp() {
               batchEnabled={officialBatchEnabled}
               batchMaxBytes={officialBatchMaxBytes}
               streamEnabled={officialStreamEnabled}
+              maxConcurrency={officialMaxConcurrency}
+              defaultMaxConcurrency={DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY}
               onBatchChange={(val) => updateStorage({ officialLLMBatchEnabled: val })}
               onBatchMaxBytesChange={(val) => updateStorage({ officialLLMBatchMaxBytes: val })}
               onStreamChange={(val) => updateStorage({ officialLLMStreamEnabled: val })}
+              onMaxConcurrencyChange={(val) => updateStorage({ officialLLMMaxConcurrency: val })}
             />
           </div>
         </>
@@ -1053,13 +1122,11 @@ function SettingsApp() {
               </div>
               <div>
                 <div className="inspector-heading-row">
-                  <h1 className="inspector-heading">微软翻译</h1>
-                  <span className="inspector-badge is-ready">内置免密</span>
-                  <span className="inspector-badge">批量原生</span>
+                  <h1 className="inspector-heading">{t("service.microsoft")}</h1>
+                  <span className="inspector-badge is-ready">{t("settings.statusBuiltInFree")}</span>
+                  <span className="inspector-badge">{t("settings.statusNativeBatch")}</span>
                 </div>
-                <p className="inspector-subtitle">
-                  Microsoft Edge 翻译通道，无需填写密钥即可直接用于划词与整页翻译
-                </p>
+                <p className="inspector-subtitle">{t("settings.msSubtitle")}</p>
               </div>
             </div>
           </div>
@@ -1074,20 +1141,18 @@ function SettingsApp() {
 
             <div className="field-card">
               <div className="field-block">
-                <span className="field-title">服务端点</span>
+                <span className="field-title">{t("settings.msEndpointLabel")}</span>
                 <div className="ndt-input is-mono" style={{ display: "flex", alignItems: "center", opacity: 0.85 }}>
                   https://edge.microsoft.com/translate/translatetext
                 </div>
-                <span className="field-help">
-                  内置高可用批量接口，单批最多支持多段落对齐返回，自动识别源语言。
-                </span>
+                <span className="field-help">{t("settings.msEndpointHelp")}</span>
               </div>
             </div>
           </div>
 
           <div className="inspector-footer">
             {renderTestStatus(ServiceId.Microsoft) || (
-              <span className="field-help">无需额外凭据，可随时点击右侧按钮测试服务响应</span>
+              <span className="field-help">{t("settings.msFooterHelp")}</span>
             )}
             <button
               type="button"
@@ -1100,7 +1165,9 @@ function SettingsApp() {
                 size={13}
                 className={testState.loading ? "ndt-spin" : ""}
               />
-              <span>{testState.loading ? "正在测试..." : "测试连通性"}</span>
+              <span>
+                {testState.loading ? t("settings.testingAlt") : t("settings.testConnection")}
+              </span>
             </button>
           </div>
         </>
@@ -1108,7 +1175,6 @@ function SettingsApp() {
     }
 
     if (activeId === ServiceId.Google) {
-      const googleType = settings?.googleType || SETTINGS_STORAGE_DEFAULTS.googleType;
       const googleMirror = settings?.googleMirror ?? SETTINGS_STORAGE_DEFAULTS.googleMirror;
       const googleHidePhonetic = Boolean(settings?.googleHidePhonetic);
 
@@ -1121,13 +1187,11 @@ function SettingsApp() {
               </div>
               <div>
                 <div className="inspector-heading-row">
-                  <h1 className="inspector-heading">谷歌翻译</h1>
-                  <span className="inspector-badge is-ready">内置免密</span>
-                  <span className="inspector-badge">批量原生</span>
+                  <h1 className="inspector-heading">{t("service.google")}</h1>
+                  <span className="inspector-badge is-ready">{t("settings.statusBuiltInFree")}</span>
+                  <span className="inspector-badge">{t("settings.statusNativeBatch")}</span>
                 </div>
-                <p className="inspector-subtitle">
-                  支持多语种自动检测、词典释义与自定义反代镜像地址
-                </p>
+                <p className="inspector-subtitle">{t("settings.googleSubtitle")}</p>
               </div>
             </div>
           </div>
@@ -1142,34 +1206,15 @@ function SettingsApp() {
 
             <div className="field-card">
               <div className="field-block">
-                <span className="field-title">接口模式</span>
-                <div className="segmented-control">
-                  {GOOGLE_MODE_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      className={`segmented-btn ${googleType === opt.value ? "is-selected" : ""}`}
-                      onClick={() => updateStorage({ googleType: opt.value })}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-                <span className="field-help">
-                  快速批量接口支持免弹窗整页并发翻译；高准确率模式在划词时可弹窗加载完整网页版谷歌翻译。
-                </span>
-              </div>
-
-              <div className="field-block">
                 <div className="field-head">
-                  <label className="field-title">镜像地址（选填）</label>
+                  <label className="field-title">{t("settings.googleMirrorLabel")}</label>
                   {googleMirror && (
                     <button
                       type="button"
                       className="field-action-link"
                       onClick={() => updateStorage({ googleMirror: "" })}
                     >
-                      清空恢复官方默认
+                      {t("settings.googleMirrorReset")}
                     </button>
                   )}
                 </div>
@@ -1180,16 +1225,14 @@ function SettingsApp() {
                   value={googleMirror}
                   onChange={(e) => updateStorage({ googleMirror: e.target.value.trim() })}
                 />
-                <span className="field-help">
-                  当前地区节点已固定为国际版 (.com)；若所在网络无法直连，可填入自建或第三方谷歌翻译镜像 URL。
-                </span>
+                <span className="field-help">{t("settings.googleMirrorHelp")}</span>
               </div>
             </div>
 
             <div className="usage-row">
               <div className="usage-row-text">
-                <span className="usage-row-title">划词结果隐藏音标</span>
-                <span className="usage-row-desc">仅保留释义和译文，使划词卡片更紧凑</span>
+                <span className="usage-row-title">{t("settings.googleHidePhonetic")}</span>
+                <span className="usage-row-desc">{t("settings.googleHidePhoneticDesc")}</span>
               </div>
               <button
                 type="button"
@@ -1203,7 +1246,7 @@ function SettingsApp() {
 
           <div className="inspector-footer">
             {renderTestStatus(ServiceId.Google) || (
-              <span className="field-help">支持自动 POST 长文本与 Chrome 扩展批量端点回退</span>
+              <span className="field-help">{t("settings.googleFooterHelp")}</span>
             )}
             <button
               type="button"
@@ -1216,7 +1259,9 @@ function SettingsApp() {
                 size={13}
                 className={testState.loading ? "ndt-spin" : ""}
               />
-              <span>{testState.loading ? "正在测试..." : "测试连通性"}</span>
+              <span>
+                {testState.loading ? t("settings.testingAlt") : t("settings.testConnection")}
+              </span>
             </button>
           </div>
         </>
@@ -1230,6 +1275,10 @@ function SettingsApp() {
       const svcBatchEnabled = svc.batchEnabled !== false;
       const svcBatchMaxBytes = svc.batchMaxBytes ?? 10000;
       const svcStreamEnabled = svc.streamEnabled !== false;
+      const svcMaxConcurrency = normalizeLlmConcurrency(
+        svc.maxConcurrency,
+        DEFAULT_CUSTOM_LLM_MAX_CONCURRENCY
+      );
 
       return (
         <>
@@ -1240,15 +1289,13 @@ function SettingsApp() {
               </div>
               <div>
                 <div className="inspector-heading-row">
-                  <h1 className="inspector-heading">{svc.name || "自定义大模型"}</h1>
+                  <h1 className="inspector-heading">{svc.name || t("service.customDefault")}</h1>
                   <span className={`inspector-badge ${isReady ? "is-ready" : "is-warn"}`}>
-                    {isReady ? "已就绪" : "待选模型"}
+                    {isReady ? t("settings.statusReady") : t("settings.statusPendingModel")}
                   </span>
-                  <span className="inspector-badge">OpenAI 兼容</span>
+                  <span className="inspector-badge">{t("settings.statusOpenAICompat")}</span>
                 </div>
-                <p className="inspector-subtitle">
-                  自定义 OpenAI Chat Completions 兼容端点，支持模型自动拉取与网页翻译
-                </p>
+                <p className="inspector-subtitle">{t("settings.customSubtitle")}</p>
               </div>
             </div>
 
@@ -1260,14 +1307,14 @@ function SettingsApp() {
                     className="ndt-btn is-danger is-compact"
                     onClick={() => handleDeleteCustomService(svc.id)}
                   >
-                    确认删除
+                    {t("common.confirmDelete")}
                   </button>
                   <button
                     type="button"
                     className="ndt-btn is-compact"
                     onClick={() => setConfirmDeleteId(null)}
                   >
-                    取消
+                    {t("common.cancel")}
                   </button>
                 </>
               ) : (
@@ -1277,7 +1324,7 @@ function SettingsApp() {
                   onClick={() => setConfirmDeleteId(svc.id)}
                 >
                   <Icon icon="trash" size={12} />
-                  <span>删除</span>
+                  <span>{t("common.delete")}</span>
                 </button>
               )}
             </div>
@@ -1293,18 +1340,18 @@ function SettingsApp() {
 
             <div className="field-card">
               <div className="field-block">
-                <label className="field-title">服务名称</label>
+                <label className="field-title">{t("settings.customNameLabel")}</label>
                 <input
                   type="text"
                   className="ndt-input"
                   value={svc.name || ""}
-                  placeholder="显示在弹窗与划词卡片中的名称"
+                  placeholder={t("settings.customNamePlaceholder")}
                   onChange={(e) => updateCustomService(svc.id, { name: e.target.value })}
                 />
               </div>
 
               <div className="field-block">
-                <label className="field-title">接口地址 (Base URL)</label>
+                <label className="field-title">{t("settings.customBaseUrlLabel")}</label>
                 <input
                   type="text"
                   className="ndt-input is-mono"
@@ -1319,13 +1366,13 @@ function SettingsApp() {
                 <label className="field-title">API Key</label>
                 <SecretKeyInput
                   value={svc.apiKey || ""}
-                  placeholder="sk-...（本地无鉴权服务可留空）"
+                  placeholder={t("settings.customApiKeyPlaceholder")}
                   onChange={(val) => updateCustomService(svc.id, { apiKey: val.trim() })}
                 />
               </div>
 
               <div className="field-block">
-                <label className="field-title">模型 (Model)</label>
+                <label className="field-title">{t("settings.modelLabel")}</label>
                 <div className="model-test-row">
                   <ModelSelectorDropdown
                     baseUrl={svc.baseUrl}
@@ -1344,7 +1391,9 @@ function SettingsApp() {
                       size={13}
                       className={testState.loading ? "ndt-spin" : ""}
                     />
-                    <span>{testState.loading ? "测试中..." : "测试连通性"}</span>
+                    <span>
+                      {testState.loading ? t("settings.testing") : t("settings.testConnection")}
+                    </span>
                   </button>
                 </div>
                 {renderTestStatus(svc.id)}
@@ -1352,19 +1401,23 @@ function SettingsApp() {
 
               <div className="field-block">
                 <div className="field-head">
-                  <span className="field-title">高级提示词（选填）</span>
+                  <span className="field-title">{t("settings.promptLabel")}</span>
                   <button
                     type="button"
                     className="field-action-link"
                     onClick={() => setShowPromptEditor((v) => !v)}
                   >
-                    {showPromptEditor ? "收起" : svc.prompt ? "已自定义 · 编辑" : "展开设置"}
+                    {showPromptEditor
+                      ? t("settings.promptCollapse")
+                      : svc.prompt
+                        ? t("settings.promptEditCustom")
+                        : t("settings.promptExpand")}
                   </button>
                 </div>
                 {showPromptEditor && (
                   <textarea
                     className="ndt-textarea"
-                    placeholder="留空使用内置专业翻译指令；划词单条翻译如自定义请包含 {{text}} 与 {{target}}。"
+                    placeholder={t("settings.promptPlaceholder")}
                     value={svc.prompt || ""}
                     onChange={(e) => updateCustomService(svc.id, { prompt: e.target.value })}
                   />
@@ -1376,9 +1429,14 @@ function SettingsApp() {
               batchEnabled={svcBatchEnabled}
               batchMaxBytes={svcBatchMaxBytes}
               streamEnabled={svcStreamEnabled}
+              maxConcurrency={svcMaxConcurrency}
+              defaultMaxConcurrency={DEFAULT_CUSTOM_LLM_MAX_CONCURRENCY}
               onBatchChange={(val) => updateCustomService(svc.id, { batchEnabled: val })}
               onBatchMaxBytesChange={(val) => updateCustomService(svc.id, { batchMaxBytes: val })}
               onStreamChange={(val) => updateCustomService(svc.id, { streamEnabled: val })}
+              onMaxConcurrencyChange={(val) =>
+                updateCustomService(svc.id, { maxConcurrency: val })
+              }
             />
           </div>
         </>
@@ -1396,40 +1454,31 @@ function SettingsApp() {
             <span className="ndt-app-logo">
               <img src={chrome.runtime.getURL("logodark.png")} alt="" />
             </span>
-            <span className="ndt-topbar-title">翻译服务配置</span>
+            <span className="ndt-topbar-title">{t("settings.topbarTitle")}</span>
             <span className="ndt-topbar-pill">
-              默认全文：{getServiceDisplayName(pageTrsApi, customServices)}
+              {t("settings.defaultPagePill", {
+                name: getServiceName(pageTrsApi, customServices),
+              })}
             </span>
           </div>
 
           <div className="ndt-topbar-right">
             <span className={`ndt-save-indicator ${savedTick ? "is-visible" : ""}`}>
               <Icon icon="tick" size={12} />
-              <span>已自动保存</span>
+              <span>{t("settings.savedIndicator")}</span>
             </span>
 
-            <div className="theme-segmented" role="group" aria-label="界面主题">
-              {THEME_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  className={`theme-segmented-btn ${darkMode === opt.value ? "is-active" : ""}`}
-                  onClick={() => updateStorage({ darkMode: opt.value })}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+            <UiLanguageSelect onChangeLocale={() => markSaved()} />
           </div>
         </div>
       </header>
 
       <div className="ndt-workspace-wrap">
         <div className="ndt-workspace-shell">
-          <aside className="service-rail" aria-label="翻译服务列表">
+          <aside className="service-rail" aria-label={t("settings.railLabel")}>
             <div className="rail-section">
               <div className="rail-section-header">
-                <span className="rail-section-label">内置服务</span>
+                <span className="rail-section-label">{t("settings.railBuiltIn")}</span>
               </div>
               <div className="rail-list">
                 <button
@@ -1442,13 +1491,16 @@ function SettingsApp() {
                   </span>
                   <span className="rail-item-meta">
                     <span className="rail-item-title-row">
-                      <span className="rail-item-title">{OFFICIAL_LLM_NAME}</span>
+                      <span className="rail-item-title">{t("service.officialLlm")}</span>
                       {pageTrsApi === OFFICIAL_LLM_ID && (
-                        <span className="rail-default-badge">默认</span>
+                        <span className="rail-default-badge">{t("settings.railDefaultBadge")}</span>
                       )}
                     </span>
                     <span className="rail-item-sub">
-                      {officialModel || (officialKey ? "点击选择模型" : "待填写 Key")}
+                      {officialModel ||
+                        (officialKey
+                          ? t("settings.railClickSelectModel")
+                          : t("settings.railNeedKey"))}
                     </span>
                   </span>
                   <span className={`status-dot ${officialReady ? "is-ready" : "is-warn"}`} />
@@ -1464,12 +1516,12 @@ function SettingsApp() {
                   </span>
                   <span className="rail-item-meta">
                     <span className="rail-item-title-row">
-                      <span className="rail-item-title">微软翻译</span>
+                      <span className="rail-item-title">{t("service.microsoft")}</span>
                       {pageTrsApi === ServiceId.Microsoft && (
-                        <span className="rail-default-badge">默认</span>
+                        <span className="rail-default-badge">{t("settings.railDefaultBadge")}</span>
                       )}
                     </span>
-                    <span className="rail-item-sub">内置 · 免密钥</span>
+                    <span className="rail-item-sub">{t("settings.railBuiltInNoKey")}</span>
                   </span>
                   <span className="status-dot is-ready" />
                 </button>
@@ -1484,12 +1536,12 @@ function SettingsApp() {
                   </span>
                   <span className="rail-item-meta">
                     <span className="rail-item-title-row">
-                      <span className="rail-item-title">谷歌翻译</span>
+                      <span className="rail-item-title">{t("service.google")}</span>
                       {pageTrsApi === ServiceId.Google && (
-                        <span className="rail-default-badge">默认</span>
+                        <span className="rail-default-badge">{t("settings.railDefaultBadge")}</span>
                       )}
                     </span>
-                    <span className="rail-item-sub">内置 · 免密钥</span>
+                    <span className="rail-item-sub">{t("settings.railBuiltInNoKey")}</span>
                   </span>
                   <span className="status-dot is-ready" />
                 </button>
@@ -1498,7 +1550,7 @@ function SettingsApp() {
 
             <div className="rail-section">
               <div className="rail-section-header">
-                <span className="rail-section-label">自定义 OpenAI 兼容</span>
+                <span className="rail-section-label">{t("settings.railCustomSection")}</span>
               </div>
 
               <div className="rail-list">
@@ -1517,19 +1569,25 @@ function SettingsApp() {
                         </span>
                         <span className="rail-item-meta">
                           <span className="rail-item-title-row">
-                            <span className="rail-item-title">{svc.name || "未命名服务"}</span>
+                            <span className="rail-item-title">
+                              {svc.name || t("settings.railUnnamedService")}
+                            </span>
                             {pageTrsApi === svc.id && (
-                              <span className="rail-default-badge">默认</span>
+                              <span className="rail-default-badge">
+                                {t("settings.railDefaultBadge")}
+                              </span>
                             )}
                           </span>
-                          <span className="rail-item-sub">{svc.model || "未选择模型"}</span>
+                          <span className="rail-item-sub">
+                            {svc.model || t("settings.railNoModel")}
+                          </span>
                         </span>
                         <span className={`status-dot ${ready ? "is-ready" : "is-warn"}`} />
                       </button>
                     );
                   })
                 ) : (
-                  <div className="rail-empty-text">暂无自定义服务</div>
+                  <div className="rail-empty-text">{t("settings.railEmptyCustom")}</div>
                 )}
               </div>
             </div>
@@ -1541,7 +1599,7 @@ function SettingsApp() {
                 onClick={handleAddCustomService}
               >
                 <Icon icon="plus" size={13} />
-                <span>新增 OpenAI 兼容服务</span>
+                <span>{t("settings.railAddCustom")}</span>
               </button>
             </div>
           </aside>

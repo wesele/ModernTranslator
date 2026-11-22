@@ -1,0 +1,22 @@
+{
+   "commands_translate": {
+      "message": "選択したテキストを翻訳"
+   },
+   "commonds_page": {
+      "message": "ページ全体を翻訳"
+   },
+   "commonds_pageSwitchMode": {
+      "message": "バイリンガル / 原文 / 訳文を切り替え"
+   },
+   "commonds_play": {
+      "message": "テキストを読み上げ"
+   },
+   "description": {
+      "description": "Extension description.",
+      "message": "完全無料・非営利の選択範囲＆ページ全体翻訳拡張機能。バイリンガル表示、LLM ストリーミングバッチ翻訳、Microsoft/Google 翻訳、コミュニティスポンサー API、OpenAI 互換サービスに対応。"
+   },
+   "name": {
+      "description": "Extension name.",
+      "message": "Modern Translator"
+   }
+}

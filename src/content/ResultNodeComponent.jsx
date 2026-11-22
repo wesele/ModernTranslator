@@ -1,7 +1,6 @@
-import * as mod_31085 from "react/jsx-runtime";
 import * as React from "react";
-import * as mod_25873 from "react-dom/client";
 import { createRoot } from "react-dom/client";
+import { t as tr } from "../shared/i18n/index.js";
 function o(e, t, n, s = "text") {
   const [o, i] = React.useState(false);
   return (
@@ -116,7 +115,7 @@ function Comp_A(e) {
           </hcfy-result-content>
         )}
         <hcfy-result-actions style={i}>
-          {"error" in t && <button onClick={n}>点击重试</button>}
+          {"error" in t && <button onClick={n}>{tr("content.clickRetry")}</button>}
         </hcfy-result-actions>
       </>
     ) : null

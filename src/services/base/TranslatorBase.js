@@ -3,6 +3,7 @@ import identity from "lodash/identity";
 import invert from "lodash/invert";
 import { o as detectLanguage } from "../translators/standardLanguages.js";
 import * as errors from "../../shared/errors/index.js";
+import { t, getLocalizedLanguageName, getServiceDisplayName } from "../../shared/i18n/index.js";
 
 function normalizeText(text) {
   return text
@@ -34,14 +35,21 @@ class TranslatorBase extends ServiceBase {
 
   async convertLanguages(req, ctx) {
     const { text, destinations, source } = req;
+    const serviceLabel = getServiceDisplayName(this.service.id) || this.service.name;
     let customSource;
     if (source) {
       customSource = this.convertToCustom(source);
       if (!customSource) {
-        throw new errors.Fw(`${this.service.name}不支持翻译语种为${source}的文本。`, {
-          type: errors.VC.UNSUPPORTED_LANGUAGE,
-          context: ctx,
-        });
+        throw new errors.Fw(
+          t("error.unsupportedSource", {
+            name: serviceLabel,
+            lang: getLocalizedLanguageName(source),
+          }),
+          {
+            type: errors.VC.UNSUPPORTED_LANGUAGE,
+            context: ctx,
+          }
+        );
       }
     }
     ctx.source = customSource;
@@ -55,7 +63,10 @@ class TranslatorBase extends ServiceBase {
     });
     if (!mappedDestinations.length) {
       throw new errors.Fw(
-        `${this.service.name}不支持将文本翻译为这些语种：${destinations.join("，")}。`,
+        t("error.unsupportedDest", {
+          name: serviceLabel,
+          langs: destinations.map((d) => getLocalizedLanguageName(d)).join(", "),
+        }),
         {
           type: errors.VC.UNSUPPORTED_LANGUAGE,
           context: ctx,
@@ -112,7 +123,8 @@ class TranslatorBase extends ServiceBase {
   }
 
   getTTS() {
-    throw new errors.Fw(`${this.service.name}不支持语音朗读。`);
+    const serviceLabel = getServiceDisplayName(this.service.id) || this.service.name;
+    throw new errors.Fw(t("error.ttsNotSupported", { name: serviceLabel }));
   }
 }
 
