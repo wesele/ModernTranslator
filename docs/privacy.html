@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>隐私政策 / Privacy Policy - 无登翻译 (Modern Translator)</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: #e2e8f0;
+      --accent: #ea580c;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f172a;
+        --card: #1e293b;
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+        --border: #334155;
+        --accent: #fb923c;
+      }
+    }
+    body {
+      margin: 0;
+      padding: 32px 16px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.7;
+    }
+    main {
+      max-width: 820px;
+      margin: 0 auto;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 32px 36px;
+    }
+    h1 { margin-top: 0; font-size: 1.65rem; }
+    h2 { margin-top: 2rem; font-size: 1.2rem; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+    .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
+    code {
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      font-size: 0.88em;
+    }
+    ul { padding-left: 1.35rem; }
+    li { margin-bottom: 0.45rem; }
+    hr { border: 0; border-top: 1px solid var(--border); margin: 2.2rem 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>隐私政策 / Privacy Policy — 无登翻译 (Modern Translator)</h1>
+    <p class="meta">最近更新 / Last Updated: 2026-11-22</p>
+
+    <h2>中文隐私政策</h2>
+    <p><strong>无登翻译（Modern Translator）</strong> 是一款完全免费、公益性质的浏览器扩展，无任何商业收费、内购或广告。本扩展尊重并保护您的隐私，仅用于提供网页划词翻译、网页全文双语对照翻译与语音朗读功能。</p>
+
+    <h3>1. 我们处理哪些数据</h3>
+    <ul>
+      <li><strong>待翻译文本：</strong>仅在您主动触发划词翻译、右键菜单、快捷键或网页全文翻译时，扩展才会将您选中的文本或当前网页需要翻译的段落文本发送至您选定的翻译引擎。</li>
+      <li><strong>配置与密钥：</strong>您的语言偏好、界面设置、自定义 OpenAI 兼容接口地址与 API Key 仅存储在本地浏览器的 <code>chrome.storage.local</code> 中，不会上传至与翻译无关的服务器。</li>
+      <li><strong>本地缓存：</strong>常用短词与短语的翻译结果会缓存在本地 IndexedDB（<code>ndt_translation_cache</code>）以提升响应速度，您可随时在设置页清理缓存。</li>
+    </ul>
+
+    <h3>2. 外部接口传输说明</h3>
+    <p>扩展不会在后台自动采集您的浏览历史。仅在您触发翻译或朗读时，数据会发送至您选择的对应服务商：</p>
+    <ul>
+      <li>微软翻译（Microsoft Translator）</li>
+      <li>谷歌翻译（Google Translate）</li>
+      <li>友情赞助商接口（<code>https://api.19781018.xyz</code>，公益赞助接口，仅在启用或查询额度时调用）</li>
+      <li>您自行配置的 OpenAI 兼容接口地址</li>
+    </ul>
+
+    <h3>3. 承诺声明</h3>
+    <ul>
+      <li>不收集任何个人身份信息（PII）。</li>
+      <li>不包含第三方广告、统计埋点或跨站追踪脚本。</li>
+      <li>不出售、出租或共享用户数据用于任何非翻译用途。</li>
+    </ul>
+
+    <hr />
+
+    <h2>English Privacy Policy</h2>
+    <p><strong>Modern Translator</strong> is a completely free, non-profit (public-interest) browser extension with no paid plans, in-app purchases, or ads. It respects and protects your privacy and is solely dedicated to text selection translation, full-page bilingual translation, and text-to-speech playback.</p>
+
+    <h3>1. Data Handling</h3>
+    <ul>
+      <li><strong>Text to Translate:</strong> Only when you explicitly initiate a translation does the extension send the selected text or webpage paragraphs to your chosen translation provider.</li>
+      <li><strong>Settings &amp; API Keys:</strong> Preferences, custom endpoints, and API keys are stored locally in <code>chrome.storage.local</code> and are never transmitted to unrelated servers.</li>
+      <li><strong>Local Cache:</strong> Short translation results are cached locally in IndexedDB (<code>ndt_translation_cache</code>) and can be cleared anytime in settings.</li>
+    </ul>
+
+    <h3>2. External Services</h3>
+    <p>No browsing history is collected in the background. Translation or TTS requests are sent strictly to the engine selected by the user: Microsoft Translator, Google Translate, the Community Sponsor LLM endpoint (<code>https://api.19781018.xyz</code>), or a user-configured OpenAI-compatible API.</p>
+
+    <h3>3. Commitments</h3>
+    <ul>
+      <li>No collection of personally identifiable information (PII).</li>
+      <li>No third-party ads, analytics SDKs, or behavioral tracking.</li>
+      <li>No sale or sharing of user data.</li>
+    </ul>
+  </main>
+</body>
+</html>

@@ -1,0 +1,75 @@
+{
+   "action": {
+      "default_icon": {
+         "16": "icons/icon16.png",
+         "48": "icons/icon48.png",
+         "128": "icons/icon128.png"
+      },
+      "default_popup": "popup.html"
+   },
+   "background": {
+      "service_worker": "b.js"
+   },
+   "commands": {
+      "_execute_action": {
+         "suggested_key": {
+            "default": "Ctrl+Q",
+            "mac": "MacCtrl+Q"
+         }
+      },
+      "page": {
+         "description": "__MSG_commonds_page__"
+      },
+      "pageSwitchMode": {
+         "description": "__MSG_commonds_pageSwitchMode__"
+      },
+      "play": {
+         "description": "__MSG_commonds_play__"
+      },
+      "translate": {
+         "description": "__MSG_commands_translate__",
+         "suggested_key": {
+            "default": "Alt+A"
+         }
+      }
+   },
+   "content_scripts": [ {
+      "js": [ "c.js" ],
+      "matches": [ "<all_urls>" ]
+   }, {
+      "all_frames": true,
+      "js": [ "ca.js" ],
+      "match_about_blank": true,
+      "matches": [ "<all_urls>" ]
+   } ],
+   "declarative_net_request": {
+      "rule_resources": [ {
+         "enabled": true,
+         "id": "ruleset",
+         "path": "net_request_rules.json"
+      } ]
+   },
+   "default_locale": "zh_CN",
+   "description": "__MSG_description__",
+   "homepage_url": "https://github.com/wesele/ModernTranslator",
+   "host_permissions": [ "<all_urls>" ],
+   "icons": {
+      "128": "icons/icon128.png",
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+   },
+   "manifest_version": 3,
+   "minimum_chrome_version": "110",
+   "name": "__MSG_name__",
+   "short_name": "__MSG_name__",
+   "options_ui": {
+      "open_in_tab": true,
+      "page": "settings.html"
+   },
+   "permissions": [ "contextMenus", "storage", "clipboardWrite", "webRequest", "offscreen", "declarativeNetRequestWithHostAccess" ],
+   "version": "1.0.0",
+   "web_accessible_resources": [ {
+      "matches": [ "<all_urls>" ],
+      "resources": [ "normalize.css", "blueprint.css", "blueprint-select.css", "google.ico", "chatgpt.jpg", "official-llm.svg", "logo.png", "logodark.png", "logowhite36.png", "microsoft.png" ]
+   } ]
+}

@@ -1,0 +1,22 @@
+{
+   "commands_translate": {
+      "message": "翻译选中的文本"
+   },
+   "commonds_page": {
+      "message": "网页全文翻译"
+   },
+   "commonds_pageSwitchMode": {
+      "message": "切换双语 / 原文 / 译文"
+   },
+   "commonds_play": {
+      "message": "朗读文本"
+   },
+   "description": {
+      "description": "扩展程序的描述。",
+      "message": "完全免费、公益性质的划词与网页全文翻译扩展，支持双语对照、大模型流式批量翻译、微软/谷歌翻译、友情赞助商接口及自定义 OpenAI 兼容服务。"
+   },
+   "name": {
+      "description": "扩展程序的名称",
+      "message": "无登翻译"
+   }
+}

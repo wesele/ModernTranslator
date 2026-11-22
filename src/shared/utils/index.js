@@ -1,0 +1,24 @@
+import * as fetchClient from "./fetchClient.js";
+import * as serializeQuery from "./serializeQuery.js";
+import * as cleanLines from "./cleanLines.js";
+import * as retryUntil from "./retryUntil.js";
+import * as createError from "./createError.js";
+import * as isObject from "./isObject.js";
+import * as abortTimeout from "./abortTimeout.js";
+import * as sleep from "./sleep.js";
+import * as dedupePromise from "./dedupePromise.js";
+import * as isThenable from "./isThenable.js";
+import * as tryParseJson from "./tryParseJson.js";
+
+export const $2 = dedupePromise.$;
+export const $5 = createError.$;
+export const $X = isThenable.$;
+export const EG = cleanLines.E;
+export const NF = fetchClient.NF;
+export const NZ = tryParseJson.N;
+export const Z4 = isObject.Z;
+export const Z5 = fetchClient.Z5;
+export const _ = abortTimeout._;
+export const fm = retryUntil.f;
+export const qs = serializeQuery.qs;
+export const yy = sleep.y;

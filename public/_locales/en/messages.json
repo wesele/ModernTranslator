@@ -1,0 +1,22 @@
+{
+   "commands_translate": {
+      "message": "Translate selected text"
+   },
+   "commonds_page": {
+      "message": "Translate full webpage"
+   },
+   "commonds_pageSwitchMode": {
+      "message": "Toggle bilingual / original / translated view"
+   },
+   "commonds_play": {
+      "message": "Read text aloud"
+   },
+   "description": {
+      "description": "Extension description.",
+      "message": "Completely free, non-profit selection & full-page translator with bilingual view, streaming LLM batch translation, Microsoft/Google engines, community sponsor LLM, and custom OpenAI-compatible APIs."
+   },
+   "name": {
+      "description": "Extension name.",
+      "message": "Modern Translator"
+   }
+}
