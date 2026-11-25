@@ -26,6 +26,10 @@ import {
   resolveChatCompletionsUrl,
   resolveOfficialQuotaOrigin,
 } from "../shared/openaiUtils.js";
+import {
+  fetchOfficialModelPerfDetail,
+  fetchOfficialModelsMetadata,
+} from "../shared/officialModelMetrics.js";
 import { UiLanguageSelect } from "../components/UiLanguageSelect.jsx";
 import { UI_LOCALE_TO_BCP47, useI18n } from "../shared/i18n/index.js";
 
@@ -255,12 +259,157 @@ function SecretKeyInput({ value, onChange, placeholder }) {
   );
 }
 
-function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
+function formatUsd2(value) {
+  if (!Number.isFinite(Number(value))) return "—";
+  return `$${Number(value).toFixed(2)}`;
+}
+
+function formatDurationMs(ms) {
+  const num = Number(ms);
+  if (!Number.isFinite(num) || num < 0) return "—";
+  if (num >= 1000) return `${(num / 1000).toFixed(2)}s`;
+  return `${Math.round(num)}ms`;
+}
+
+function formatTps(tps) {
+  const num = Number(tps);
+  if (!Number.isFinite(num) || num <= 0) return "—";
+  return `${num.toFixed(1)}t/s`;
+}
+
+function formatBucketHour(ts) {
+  try {
+    const date = new Date(ts * 1000);
+    const hh = String(date.getHours()).padStart(2, "0");
+    return `${hh}:00`;
+  } catch {
+    return "";
+  }
+}
+
+function HealthStatusBars({ health, uptime, t }) {
+  if (!health?.buckets?.length) {
+    const uptimeText =
+      uptime && Number.isFinite(Number(uptime.uptime))
+        ? `Uptime ${(Number(uptime.uptime) * 100).toFixed(1)}%`
+        : "";
+    return (
+      <span
+        className="model-health-wrap is-empty"
+        title={uptimeText || t("settings.modelHealthNoData")}
+      >
+        <span className="model-health-bars" aria-hidden="true">
+          {Array.from({ length: 24 }, (_, idx) => (
+            <span key={idx} className="model-health-bar is-empty" />
+          ))}
+        </span>
+        <span className="model-health-rate">—</span>
+      </span>
+    );
+  }
+
+  const rateText =
+    health.successRate !== null ? `${Math.round(health.successRate * 10) / 10}%` : "—";
+  const latencyText = formatDurationMs(health.avgLatencyMs);
+  const tpsText = formatTps(health.avgTps);
+  let tooltip = t("settings.modelHealthTooltip", {
+    rate: health.successRate !== null ? health.successRate.toFixed(1) : "—",
+    latency: latencyText,
+    tps: tpsText,
+  });
+  if (uptime && Number.isFinite(Number(uptime.uptime))) {
+    tooltip += ` · Uptime ${(Number(uptime.uptime) * 100).toFixed(1)}%`;
+  }
+
+  const rateClass =
+    health.successRate === null
+      ? ""
+      : health.successRate >= 95
+        ? "is-ok"
+        : health.successRate >= 80
+          ? "is-warn"
+          : "is-bad";
+
+  return (
+    <span className="model-health-wrap" title={tooltip}>
+      <span className="model-health-bars" aria-hidden="true">
+        {health.buckets.map((bucket) => {
+          const hourLabel = formatBucketHour(bucket.ts);
+          const bucketTitle =
+            bucket.successRate !== null
+              ? `${hourLabel} · ${bucket.successRate.toFixed(1)}%`
+              : `${hourLabel} · —`;
+          return (
+            <span
+              key={bucket.ts}
+              className={`model-health-bar is-${bucket.status}`}
+              title={bucketTitle}
+            />
+          );
+        })}
+      </span>
+      <span className={`model-health-rate ${rateClass}`}>{rateText}</span>
+    </span>
+  );
+}
+
+function getPriceTierClass(pricing) {
+  if (!pricing) return "";
+  const raw = pricing.kind === "request" ? pricing.requestUsd : pricing.inputUsd;
+  const num = Number(raw);
+  if (!Number.isFinite(num)) return "";
+  // Compare against the displayed 2-decimal USD price so e.g. $0.014 -> $0.01 matches the green tier
+  const rounded = Math.round(num * 100) / 100;
+  if (rounded <= 0.01) return "is-price-green";
+  if (rounded < 0.1) return "is-price-blue";
+  if (rounded < 2) return "is-price-orange";
+  return "is-price-red";
+}
+
+function ModelPricingSnippet({ pricing, t }) {
+  if (!pricing) {
+    return <span className="model-price-muted">{t("settings.modelPriceUnavailable")}</span>;
+  }
+
+  const tierClass = getPriceTierClass(pricing);
+
+  if (pricing.kind === "request") {
+    return (
+      <span className="model-price-group">
+        <span className={`model-price-text ${tierClass}`}>
+          {t("settings.modelPricePerRequest")} <strong>{formatUsd2(pricing.requestUsd)}</strong>
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <span className="model-price-group">
+      <span className={`model-price-text ${tierClass}`}>
+        {t("settings.modelPriceInput")} <strong>{formatUsd2(pricing.inputUsd)}</strong>
+        <span className="model-price-sep">·</span>
+        {t("settings.modelPriceOutput")} <strong>{formatUsd2(pricing.outputUsd)}</strong>
+        <span className="model-price-unit">/1M</span>
+      </span>
+    </span>
+  );
+}
+
+function ModelSelectorDropdown({
+  baseUrl,
+  apiKey,
+  model,
+  onSelectModel,
+  showRichMetrics = false,
+  richMetadata = null,
+  onRichMetadataLoaded = null,
+}) {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [models, setModels] = React.useState([]);
   const [fetchError, setFetchError] = React.useState("");
+  const [previewNotice, setPreviewNotice] = React.useState("");
   const [search, setSearch] = React.useState("");
   const [manualModel, setManualModel] = React.useState("");
 
@@ -274,6 +423,7 @@ function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
       lastSignatureRef.current = signature;
       setModels([]);
       setFetchError("");
+      setPreviewNotice("");
     }
   }, [signature]);
 
@@ -307,12 +457,71 @@ function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
     abortRef.current = controller;
     setLoading(true);
     setFetchError("");
+    setPreviewNotice("");
     try {
-      const list = await fetchOpenAIModels(baseUrl, apiKey, controller.signal);
+      if (!showRichMetrics) {
+        const list = await fetchOpenAIModels(baseUrl, apiKey, controller.signal);
+        if (controller.signal.aborted) return;
+        setModels(list);
+        if (!list.length) {
+          setFetchError(t("settings.modelEmptyListError"));
+        }
+        return;
+      }
+
+      const [modelsOutcome, metaOutcome] = await Promise.allSettled([
+        fetchOpenAIModels(baseUrl, apiKey, controller.signal),
+        fetchOfficialModelsMetadata({
+          baseUrl,
+          apiKey,
+          signal: controller.signal,
+        }),
+      ]);
+
       if (controller.signal.aborted) return;
-      setModels(list);
-      if (!list.length) {
-        setFetchError(t("settings.modelEmptyListError"));
+
+      const meta = metaOutcome.status === "fulfilled" ? metaOutcome.value : null;
+      if (meta && onRichMetadataLoaded) {
+        onRichMetadataLoaded(meta);
+      }
+
+      if (modelsOutcome.status === "fulfilled") {
+        const list = modelsOutcome.value;
+        setModels(list);
+        if (!list.length) {
+          setFetchError(t("settings.modelEmptyListError"));
+        }
+        const missingMetaIds = list.filter((id) => !meta?.byModel?.[id]?.health);
+        if (missingMetaIds.length > 0 && list.length > 0) {
+          fetchOfficialModelsMetadata({
+            baseUrl,
+            apiKey,
+            modelIds: list,
+            signal: controller.signal,
+          })
+            .then((enriched) => {
+              if (!controller.signal.aborted && enriched && onRichMetadataLoaded) {
+                onRichMetadataLoaded(enriched);
+              }
+            })
+            .catch(() => {});
+        }
+        return;
+      }
+
+      const err = modelsOutcome.reason;
+      if (err?.name === "AbortError") return;
+
+      // If no API key is entered yet and `/api/pricing` returned public models, show preview list
+      const trimmedKey = String(apiKey || "").trim();
+      const publicList = (meta?.pricingModelNames || [])
+        .slice()
+        .sort((a, b) => a.localeCompare(b));
+      if (!trimmedKey && publicList.length > 0) {
+        setModels(publicList);
+        setPreviewNotice(t("settings.modelPublicPreviewHint"));
+      } else {
+        setFetchError(err?.message || t("settings.modelFetchFail"));
       }
     } catch (err) {
       if (err?.name === "AbortError") return;
@@ -322,7 +531,7 @@ function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
         setLoading(false);
       }
     }
-  }, [baseUrl, apiKey, t]);
+  }, [baseUrl, apiKey, showRichMetrics, onRichMetadataLoaded, t]);
 
   const handleToggleOpen = () => {
     const nextOpen = !isOpen;
@@ -360,7 +569,7 @@ function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
       </button>
 
       {isOpen && (
-        <div className="model-popover" role="listbox">
+        <div className={`model-popover ${showRichMetrics ? "is-rich" : ""}`} role="listbox">
           <div className="model-popover-search">
             <Icon icon="search" size={12} />
             <input
@@ -386,6 +595,12 @@ function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
             </div>
           )}
 
+          {!loading && previewNotice && (
+            <div className="model-popover-status is-info">
+              <span>{previewNotice}</span>
+            </div>
+          )}
+
           {!loading && fetchError && (
             <div className="model-popover-status is-error">
               <span style={{ minWidth: 0, wordBreak: "break-word" }}>{fetchError}</span>
@@ -399,24 +614,65 @@ function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
             </div>
           )}
 
-          <div className="model-popover-list">
+          <div className={`model-popover-list ${showRichMetrics ? "is-rich" : ""}`}>
             {filteredModels.length > 0 ? (
               filteredModels.map((id) => {
                 const selected = id === model;
+                const info = showRichMetrics ? richMetadata?.byModel?.[id] : null;
+                if (!showRichMetrics) {
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      className={`model-option ${selected ? "is-selected" : ""}`}
+                      onClick={() => {
+                        onSelectModel(id);
+                        setIsOpen(false);
+                      }}
+                    >
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{id}</span>
+                      {selected && <Icon icon="tick" size={12} />}
+                    </button>
+                  );
+                }
+
+                const latencyMs = info?.health?.avgLatencyMs;
+                const tps = info?.health?.avgTps;
+                const hasPerfSub = Number.isFinite(latencyMs) || Number.isFinite(tps);
+
                 return (
                   <button
                     key={id}
                     type="button"
                     role="option"
                     aria-selected={selected}
-                    className={`model-option ${selected ? "is-selected" : ""}`}
+                    className={`model-option is-rich ${selected ? "is-selected" : ""}`}
                     onClick={() => {
                       onSelectModel(id);
                       setIsOpen(false);
                     }}
                   >
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{id}</span>
-                    {selected && <Icon icon="tick" size={12} />}
+                    <div className="model-option-top">
+                      <span className="model-option-name-wrap">
+                        <span className="model-option-name" title={info?.description || id}>
+                          {id}
+                        </span>
+                        {selected && <Icon icon="tick" size={12} className="model-option-tick" />}
+                      </span>
+                      <HealthStatusBars health={info?.health} uptime={info?.uptime} t={t} />
+                    </div>
+                    <div className="model-option-bottom">
+                      <ModelPricingSnippet pricing={info?.pricing} t={t} />
+                      {hasPerfSub && (
+                        <span className="model-perf-sub">
+                          {Number.isFinite(latencyMs) && <span>{formatDurationMs(latencyMs)}</span>}
+                          {Number.isFinite(latencyMs) && Number.isFinite(tps) && <span>·</span>}
+                          {Number.isFinite(tps) && <span>{formatTps(tps)}</span>}
+                        </span>
+                      )}
+                    </div>
                   </button>
                 );
               })
@@ -452,6 +708,37 @@ function ModelSelectorDropdown({ baseUrl, apiKey, model, onSelectModel }) {
           </form>
         </div>
       )}
+    </div>
+  );
+}
+
+function OfficialModelSummaryBar({ model, metadata, perfDetail, t }) {
+  const info = model ? metadata?.byModel?.[model] : null;
+  if (!model || (!info?.pricing && !info?.health && !perfDetail)) return null;
+
+  const latencyMs = perfDetail?.avgLatencyMs ?? info?.health?.avgLatencyMs;
+  const ttftMs = perfDetail?.avgTtftMs;
+  const tps = perfDetail?.avgTps ?? info?.health?.avgTps;
+
+  return (
+    <div className="official-model-meta-bar">
+      <div className="official-model-meta-left">
+        <ModelPricingSnippet pricing={info?.pricing} t={t} />
+      </div>
+      <div className="official-model-meta-right">
+        {Number.isFinite(ttftMs) && (
+          <span className="official-model-stat">
+            {t("settings.modelTtftLabel", { ttft: formatDurationMs(ttftMs) })}
+          </span>
+        )}
+        {Number.isFinite(latencyMs) && (
+          <span className="official-model-stat">
+            {t("settings.modelLatencyLabel", { latency: formatDurationMs(latencyMs) })}
+          </span>
+        )}
+        {Number.isFinite(tps) && <span className="official-model-stat">{formatTps(tps)}</span>}
+        <HealthStatusBars health={info?.health} uptime={info?.uptime} t={t} />
+      </div>
     </div>
   );
 }
@@ -756,6 +1043,63 @@ function SettingsApp() {
     };
   }, [activeId, officialKey, refreshOfficialQuota]);
 
+  const [officialModelsMeta, setOfficialModelsMeta] = React.useState(null);
+  const [officialPerfDetail, setOfficialPerfDetail] = React.useState(null);
+  const officialMetaSigRef = React.useRef("");
+
+  React.useEffect(() => {
+    const targetBaseUrl = officialBaseUrl || OFFICIAL_LLM_BASE_URL;
+    const sig = `${resolveOfficialQuotaOrigin(targetBaseUrl)}__${officialKey || ""}`;
+    if (officialMetaSigRef.current !== sig) {
+      officialMetaSigRef.current = sig;
+      setOfficialModelsMeta(null);
+      setOfficialPerfDetail(null);
+    }
+  }, [officialBaseUrl, officialKey]);
+
+  React.useEffect(() => {
+    if (activeId !== OFFICIAL_LLM_ID) return undefined;
+    const trimmedModel = String(officialModel || "").trim();
+    if (!trimmedModel) {
+      setOfficialPerfDetail(null);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const targetBaseUrl = officialBaseUrl || OFFICIAL_LLM_BASE_URL;
+
+    const loadSelectedMeta = async () => {
+      let meta = officialModelsMeta;
+      if (!meta || !meta.byModel?.[trimmedModel]) {
+        meta = await fetchOfficialModelsMetadata({
+          baseUrl: targetBaseUrl,
+          apiKey: officialKey,
+          modelIds: [trimmedModel],
+          signal: controller.signal,
+        }).catch(() => null);
+        if (controller.signal.aborted) return;
+        if (meta) setOfficialModelsMeta(meta);
+      }
+
+      const group = meta?.byModel?.[trimmedModel]?.group || "default";
+      const detail = await fetchOfficialModelPerfDetail({
+        baseUrl: targetBaseUrl,
+        apiKey: officialKey,
+        model: trimmedModel,
+        group,
+        signal: controller.signal,
+      }).catch(() => null);
+      if (controller.signal.aborted) return;
+      setOfficialPerfDetail(detail);
+    };
+
+    const timer = setTimeout(loadSelectedMeta, 200);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [activeId, officialBaseUrl, officialKey, officialModel]);
+
   const activeCustomService = customServices.find((item) => item.id === activeId) || null;
 
   React.useEffect(() => {
@@ -1050,6 +1394,9 @@ function SettingsApp() {
                     apiKey={officialKey}
                     model={officialModel}
                     onSelectModel={(nextModel) => updateStorage({ officialLLMModel: nextModel })}
+                    showRichMetrics
+                    richMetadata={officialModelsMeta}
+                    onRichMetadataLoaded={setOfficialModelsMeta}
                   />
                   <button
                     type="button"
@@ -1067,6 +1414,12 @@ function SettingsApp() {
                     </span>
                   </button>
                 </div>
+                <OfficialModelSummaryBar
+                  model={officialModel}
+                  metadata={officialModelsMeta}
+                  perfDetail={officialPerfDetail}
+                  t={t}
+                />
                 {renderTestStatus(OFFICIAL_LLM_ID)}
               </div>
 

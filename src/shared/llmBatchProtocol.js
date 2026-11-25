@@ -70,6 +70,7 @@ function buildPromptHeader(source, destination, customPrompt) {
     "2. Return ONLY the translated <ndt-seg id=\"N\">...</ndt-seg> tags with exact matching id attributes.",
     "3. Do NOT omit, merge, split, or reorder segments. Preserve internal line breaks when appropriate.",
     "4. Do NOT output explanations, notes, or markdown code fences (such as ```xml). Output the tags directly.",
+    "5. Preserve any inline math/node placeholders like {{0}}, {{1}} verbatim in the natural grammatical position.",
     customHint,
     "",
   ]

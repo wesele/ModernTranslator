@@ -46,7 +46,9 @@ class F extends _A_27429 {
       data: e,
       senderFramePosition: t,
     };
-    return chrome.runtime.sendMessage(n);
+    return (typeof browser !== "undefined" ? browser : chrome).runtime
+      .sendMessage(n)
+      .catch(() => {});
   }
 }
 export { F as B };

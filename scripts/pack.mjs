@@ -5,8 +5,16 @@ import { execFileSync } from "child_process";
 
 const rootDir = process.cwd();
 const buildScript = path.join(rootDir, "scripts", "build.mjs");
-const distDir = path.join(rootDir, "dist");
 const releaseDir = path.join(rootDir, "release");
+
+const targetArg = process.argv.find((arg) => arg.startsWith("--target="));
+const requestedTarget = targetArg ? targetArg.slice("--target=".length).toLowerCase() : "chrome";
+
+const VALID_TARGETS = new Set(["chrome", "firefox", "all"]);
+if (!VALID_TARGETS.has(requestedTarget)) {
+  console.error(`Unsupported --target="${requestedTarget}". Use chrome, firefox, or all.`);
+  process.exit(1);
+}
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -126,19 +134,81 @@ function createZipBuffer(files) {
   return Buffer.concat([...localChunks, ...centralChunks, eocd]);
 }
 
-function validateDist(files) {
+function validateDist(files, distDir, target) {
   const relSet = new Set(files.map((f) => f.relPath));
+  const dirLabel = path.relative(rootDir, distDir);
+
   if (!relSet.has("manifest.json")) {
-    throw new Error("dist/manifest.json is missing");
+    throw new Error(`${dirLabel}/manifest.json is missing`);
   }
   const mapFiles = files.filter((f) => f.relPath.endsWith(".map"));
   if (mapFiles.length > 0) {
-    throw new Error(`Unexpected sourcemap files in dist/: ${mapFiles.map((f) => f.relPath).join(", ")}`);
+    throw new Error(
+      `Unexpected sourcemap files in ${dirLabel}/: ${mapFiles.map((f) => f.relPath).join(", ")}`
+    );
   }
 
   const manifest = JSON.parse(fs.readFileSync(path.join(distDir, "manifest.json"), "utf8"));
   if (manifest.manifest_version !== 3) {
     throw new Error(`Expected manifest_version 3, got ${manifest.manifest_version}`);
+  }
+
+  if (target === "firefox") {
+    if (manifest.background?.service_worker) {
+      throw new Error("Firefox MV3 manifest should use background.scripts instead of service_worker");
+    }
+    const bgScripts = manifest.background?.scripts || [];
+    if (!Array.isArray(bgScripts) || bgScripts.length === 0) {
+      throw new Error("Firefox manifest is missing background.scripts");
+    }
+    for (const scriptPath of bgScripts) {
+      if (!relSet.has(scriptPath)) {
+        throw new Error(`Background script missing in ${dirLabel}/: ${scriptPath}`);
+      }
+    }
+    if ((manifest.permissions || []).includes("offscreen")) {
+      throw new Error('Firefox manifest must not request unsupported "offscreen" permission');
+    }
+    if (manifest.minimum_chrome_version) {
+      throw new Error("Firefox manifest should not include Chrome-only minimum_chrome_version");
+    }
+    if (relSet.has("offscreen.html") || relSet.has("o.js")) {
+      throw new Error(`Firefox build in ${dirLabel}/ should not bundle Chrome-only offscreen files`);
+    }
+    const gecko = manifest.browser_specific_settings?.gecko;
+    if (!gecko?.id) {
+      throw new Error("Firefox manifest is missing browser_specific_settings.gecko.id");
+    }
+    if (!gecko?.strict_min_version) {
+      throw new Error("Firefox manifest is missing browser_specific_settings.gecko.strict_min_version");
+    }
+    if (!Array.isArray(gecko?.data_collection_permissions?.required)) {
+      throw new Error(
+        "Firefox manifest is missing browser_specific_settings.gecko.data_collection_permissions.required"
+      );
+    }
+  } else {
+    const swPath = manifest.background?.service_worker;
+    if (!swPath || !relSet.has(swPath)) {
+      throw new Error(`Chrome service_worker missing in ${dirLabel}/: ${swPath}`);
+    }
+    if (!relSet.has("offscreen.html") || !relSet.has("o.js")) {
+      throw new Error(`Chrome build in ${dirLabel}/ is missing offscreen.html or o.js`);
+    }
+  }
+
+  for (const cs of manifest.content_scripts || []) {
+    for (const jsPath of cs.js || []) {
+      if (!relSet.has(jsPath)) {
+        throw new Error(`content_scripts file missing in ${dirLabel}/: ${jsPath}`);
+      }
+    }
+  }
+
+  for (const rule of manifest.declarative_net_request?.rule_resources || []) {
+    if (!relSet.has(rule.path)) {
+      throw new Error(`declarative_net_request rule file missing in ${dirLabel}/: ${rule.path}`);
+    }
   }
 
   const iconPaths = [
@@ -149,14 +219,14 @@ function validateDist(files) {
   ];
   for (const iconPath of iconPaths) {
     if (!relSet.has(iconPath)) {
-      throw new Error(`Icon referenced in manifest.json is missing in dist/: ${iconPath}`);
+      throw new Error(`Icon referenced in manifest.json is missing in ${dirLabel}/: ${iconPath}`);
     }
   }
 
   for (const group of manifest.web_accessible_resources || []) {
     for (const resPath of group.resources || []) {
       if (!relSet.has(resPath)) {
-        throw new Error(`web_accessible_resources entry missing in dist/: ${resPath}`);
+        throw new Error(`web_accessible_resources entry missing in ${dirLabel}/: ${resPath}`);
       }
     }
   }
@@ -167,7 +237,7 @@ function validateDist(files) {
     const desc = messages?.description?.message;
     if (typeof desc === "string" && desc.length > 132) {
       throw new Error(
-        `Chrome Web Store limit exceeded: ${locFile.relPath} description is ${desc.length} chars (max 132)`
+        `Store description limit exceeded: ${locFile.relPath} description is ${desc.length} chars (max 132)`
       );
     }
   }
@@ -183,16 +253,29 @@ function validateDist(files) {
   return manifest;
 }
 
-execFileSync(process.execPath, [buildScript], { stdio: "inherit" });
+function packTarget(target) {
+  execFileSync(process.execPath, [buildScript, `--target=${target}`], { stdio: "inherit" });
 
-const files = collectFiles(distDir);
-const manifest = validateDist(files);
-const version = manifest.version || "0.0.0";
+  const distDir = path.join(rootDir, target === "firefox" ? "dist-firefox" : "dist");
+  const files = collectFiles(distDir);
+  const manifest = validateDist(files, distDir, target);
+  const version = manifest.version || "0.0.0";
 
-fs.mkdirSync(releaseDir, { recursive: true });
-const outName = `modern-translator-v${version}.zip`;
-const outPath = path.join(releaseDir, outName);
-const zipBuffer = createZipBuffer(files);
-fs.writeFileSync(outPath, zipBuffer);
+  fs.mkdirSync(releaseDir, { recursive: true });
+  const outName =
+    target === "firefox"
+      ? `modern-translator-firefox-v${version}.zip`
+      : `modern-translator-v${version}.zip`;
+  const outPath = path.join(releaseDir, outName);
+  const zipBuffer = createZipBuffer(files);
+  fs.writeFileSync(outPath, zipBuffer);
 
-console.log(`Packed ${files.length} files -> ${path.relative(rootDir, outPath)} (${(zipBuffer.length / 1024).toFixed(1)} KB)`);
+  console.log(
+    `Packed [${target}] ${files.length} files -> ${path.relative(rootDir, outPath)} (${(zipBuffer.length / 1024).toFixed(1)} KB)`
+  );
+}
+
+const targetsToPack = requestedTarget === "all" ? ["chrome", "firefox"] : [requestedTarget];
+for (const target of targetsToPack) {
+  packTarget(target);
+}

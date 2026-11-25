@@ -1045,10 +1045,24 @@ body {
   background-color: var(--ndt-danger-bg);
 }
 
+.model-popover-status.is-info {
+  color: var(--ndt-warn-fg);
+  background-color: var(--ndt-warn-bg);
+  font-size: 11.5px;
+}
+
 .model-popover-list {
   max-height: 220px;
   overflow-y: auto;
   padding: 4px;
+}
+
+.model-popover-list.is-rich {
+  max-height: 310px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .model-option {
@@ -1076,6 +1090,235 @@ body {
 .model-option.is-selected {
   background-color: var(--ndt-bg-active);
   font-weight: 600;
+}
+
+.model-option.is-rich {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-family: var(--ndt-font-sans);
+}
+
+.model-option-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.model-option-name-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.model-option-name {
+  font-family: var(--ndt-font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ndt-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-option.is-selected .model-option-name {
+  font-weight: 700;
+}
+
+.model-option-tick {
+  color: var(--ndt-success-fg);
+  flex-shrink: 0;
+}
+
+.model-option-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.model-price-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.model-price-text {
+  color: var(--ndt-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.model-price-text strong {
+  color: var(--ndt-text-primary);
+  font-weight: 600;
+}
+
+.model-price-text.is-price-green,
+.model-price-text.is-price-green strong {
+  color: var(--ndt-success-fg);
+}
+
+.model-price-text.is-price-blue,
+.model-price-text.is-price-blue strong {
+  color: var(--ndt-brand-blue);
+}
+
+.model-price-text.is-price-orange,
+.model-price-text.is-price-orange strong {
+  color: #ea580c;
+}
+
+body.bp6-dark .model-price-text.is-price-orange,
+body.bp6-dark .model-price-text.is-price-orange strong {
+  color: #fb923c;
+}
+
+.model-price-text.is-price-red,
+.model-price-text.is-price-red strong {
+  color: var(--ndt-danger-fg);
+}
+
+.model-price-text.is-price-green .model-price-sep,
+.model-price-text.is-price-green .model-price-unit,
+.model-price-text.is-price-blue .model-price-sep,
+.model-price-text.is-price-blue .model-price-unit,
+.model-price-text.is-price-orange .model-price-sep,
+.model-price-text.is-price-orange .model-price-unit,
+.model-price-text.is-price-red .model-price-sep,
+.model-price-text.is-price-red .model-price-unit {
+  color: inherit;
+  opacity: 0.78;
+}
+
+.model-price-sep {
+  margin: 0 4px;
+  color: var(--ndt-text-muted);
+}
+
+.model-price-unit {
+  margin-left: 2px;
+  color: var(--ndt-text-muted);
+  font-size: 10.5px;
+}
+
+.model-price-muted {
+  color: var(--ndt-text-muted);
+}
+
+.model-perf-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ndt-text-muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.model-health-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.model-health-bars {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.5px;
+  height: 12px;
+}
+
+.model-health-bar {
+  width: 2.5px;
+  height: 12px;
+  border-radius: 1px;
+  background-color: var(--ndt-border);
+  transition: opacity 0.12s ease;
+}
+
+.model-health-bar.is-empty {
+  background-color: rgba(113, 113, 122, 0.2);
+}
+
+body.bp6-dark .model-health-bar.is-empty {
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+.model-health-bar.is-ok {
+  background-color: #10b981;
+}
+
+.model-health-bar.is-warn {
+  background-color: #f59e0b;
+}
+
+.model-health-bar.is-bad {
+  background-color: #ef4444;
+}
+
+.model-health-rate {
+  min-width: 34px;
+  text-align: right;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ndt-text-muted);
+}
+
+.model-health-rate.is-ok {
+  color: var(--ndt-success-fg);
+}
+
+.model-health-rate.is-warn {
+  color: var(--ndt-warn-fg);
+}
+
+.model-health-rate.is-bad {
+  color: var(--ndt-danger-fg);
+}
+
+.official-model-meta-bar {
+  margin-top: 2px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--ndt-border-subtle);
+  background-color: var(--ndt-bg-window);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+}
+
+.official-model-meta-left,
+.official-model-meta-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.official-model-stat {
+  color: var(--ndt-text-secondary);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background-color: var(--ndt-bg-subtle);
 }
 
 .model-empty-hint {

@@ -476,6 +476,12 @@ body {
   border: 1px solid var(--ndt-danger-border);
 }
 
+.popup-notice.is-permission {
+  background-color: var(--ndt-pos-bg);
+  color: var(--ndt-pos-fg);
+  border-color: transparent;
+}
+
 .popup-footer {
   display: flex;
   align-items: center;
@@ -494,8 +500,15 @@ body {
   white-space: nowrap;
 }
 
-.settings-btn {
+.footer-actions {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.settings-btn {
   height: 26px;
   padding: 0 9px;
   border-radius: 7px;
@@ -512,8 +525,13 @@ body {
   transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 
-.settings-btn:hover {
+.settings-btn:hover:not(:disabled) {
   background-color: var(--ndt-bg-hover);
   color: var(--ndt-text-primary);
   border-color: var(--ndt-border-hover);
+}
+
+.settings-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }

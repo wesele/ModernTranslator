@@ -113,6 +113,7 @@ function m(e, u) {
             if (e.nodeType === Node.DOCUMENT_FRAGMENT_NODE)
               return (
                 (E = (function (e) {
+                  if (typeof e.getSelection !== "function") return;
                   const u = e.getSelection();
                   if (!u || !u.rangeCount) return;
                   const t = u.getRangeAt(0);

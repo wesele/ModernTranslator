@@ -160,8 +160,9 @@ const o = {
   "sr-ME": undefined,
 };
 async function r(e) {
-  const t = await chrome.i18n.detectLanguage(e),
-    n = t.languages[0]?.language;
+  const api = typeof browser !== "undefined" ? browser : chrome;
+  const t = await api.i18n.detectLanguage(e),
+    n = t?.languages?.[0]?.language;
   if (n) return o[n];
 }
 export { r as o };

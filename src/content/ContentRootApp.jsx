@@ -39,6 +39,13 @@ import {
 } from "../shared/openaiUtils.js";
 import { produce } from "immer";
 import { usePrevious } from "react-use";
+import {
+  SUBTITLE_LEAD_PAD_COUNT,
+  formatSubtitleTime,
+  pickDefaultSelectedTrackKeys,
+  mergeSubtitleTimelineRows,
+  findActiveSubtitleIndex,
+} from "../shared/subtitleTimeline.js";
 import * as mod_66690 from "../services/translators/standardLanguages.js";
 import * as mod_81215 from "../shared/utils/textTransform.js";
 import * as mod_67116 from "../shared/messaging/index.js";
@@ -62,7 +69,7 @@ import {
   estimateSegmentBytes,
 } from "../shared/llmBatchProtocol.js";
 import { t as tr, useI18n, getServiceDisplayName } from "../shared/i18n/index.js";
-const u = "static" !== getComputedStyle(document.documentElement).position;
+const u = "static" !== getComputedStyle(document.documentElement)?.position;
 function f() {
   return {
     edges: {
@@ -1144,6 +1151,29 @@ const NATIVE_BATCH_APIS = new Set(["GoogleWeb", "Microsoft"]);
 const NATIVE_BATCH_MAX_ITEMS = 20;
 const NATIVE_BATCH_MAX_CHARS = 2500;
 
+function computeViewportPriority(target, rectOverride) {
+  const vh = window.innerHeight || document.documentElement.clientHeight || 800;
+  if (!(target instanceof Element) || !target.isConnected) {
+    return [3, Number.MAX_SAFE_INTEGER];
+  }
+  const rect = rectOverride || target.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) {
+    return [3, Number.MAX_SAFE_INTEGER];
+  }
+  const inViewport = rect.bottom > 0 && rect.top < vh;
+  const isChrome = !!target.closest("nav, header, footer, aside");
+  const tier = (inViewport ? 0 : 2) + (isChrome ? 1 : 0);
+  const dist = inViewport
+    ? Math.max(0, rect.top)
+    : Math.abs((rect.top + rect.bottom) / 2 - vh / 2);
+  return [tier, dist];
+}
+
+function compareViewportPriority(a, b) {
+  if (a[0] !== b[0]) return a[0] - b[0];
+  return a[1] - b[1];
+}
+
 class Ve extends _A_27429 {
   stream = [];
   streamBytes = 0;
@@ -1299,6 +1329,30 @@ class Ve extends _A_27429 {
         }
       );
   }
+  popNextBatch() {
+    if (this.queue.length <= 1) {
+      return this.queue.shift();
+    }
+    let bestIndex = 0;
+    let bestScore = null;
+    for (let i = 0; i < this.queue.length; i += 1) {
+      const batch = this.queue[i];
+      let batchBest = [3, Number.MAX_SAFE_INTEGER];
+      for (const item of batch) {
+        const score = item.targetNode
+          ? computeViewportPriority(item.targetNode)
+          : [2, Number.MAX_SAFE_INTEGER - 1];
+        if (compareViewportPriority(score, batchBest) < 0) {
+          batchBest = score;
+        }
+      }
+      if (!bestScore || compareViewportPriority(batchBest, bestScore) < 0) {
+        bestScore = batchBest;
+        bestIndex = i;
+      }
+    }
+    return this.queue.splice(bestIndex, 1)[0];
+  }
   handleTask() {
     if (this.destroyed) return;
     if (this.isLlm) {
@@ -1306,7 +1360,7 @@ class Ve extends _A_27429 {
       return;
     }
     if (this.handling) return;
-    let e = this.queue.shift();
+    let e = this.popNextBatch();
     if (!e) {
       if (!this.stream.length) return;
       e = this.stream;
@@ -1423,7 +1477,7 @@ class Ve extends _A_27429 {
   }
   handleLlmBatchTasks() {
     while (!this.destroyed && this.activeCount < this.llmMaxConcurrency) {
-      let batch = this.queue.shift();
+      let batch = this.popNextBatch();
       if (!batch) {
         if (!this.stream.length) break;
         batch = this.stream;
@@ -1737,7 +1791,23 @@ const Ze = [
 function Ge(e) {
   return e.nodeType === Node.ELEMENT_NODE;
 }
-function Qe(e) {
+function isInlineMathElement(e, getDisplay = (el) => window.getComputedStyle(el).display) {
+  const t = e.tagName.toLowerCase();
+  if ("math" !== t && "mjx-container" !== t) return false;
+  if ("block" === e.getAttribute("display") || "true" === e.getAttribute("display")) {
+    return false;
+  }
+  return "block" !== getDisplay(e);
+}
+function isFlexOrGridContainer(e, getDisplay = (el) => window.getComputedStyle(el).display) {
+  if (!(e instanceof Element)) return false;
+  const t = e.tagName.toLowerCase();
+  if ("a" === t || "button" === t || "button" === e.getAttribute("role")) return false;
+  const disp = getDisplay(e);
+  return "flex" === disp || "inline-flex" === disp || "grid" === disp || "inline-grid" === disp;
+}
+function Qe(e, getDisplay) {
+  if (isInlineMathElement(e, getDisplay)) return false;
   const t = e.tagName.toLowerCase();
   return Je.includes(t) || (t.includes("-") && "g-emoji" !== t);
 }
@@ -1745,7 +1815,7 @@ function et(e) {
   const t = e.tagName.toLowerCase();
   return "button" === e.getAttribute("role") ? !Ze.includes(t) : "button" === t || "a" === t;
 }
-function tt(e, t, n = () => false, s) {
+function tt(e, t, n = () => false, s, getDisplay = (el) => window.getComputedStyle(el).display) {
   const r = {
     element: e,
     paragraphs: [],
@@ -1755,7 +1825,7 @@ function tt(e, t, n = () => false, s) {
   if (e instanceof Element) {
     const o = e.shadowRoot;
     if (o) {
-      const e = tt(o, t, n, s);
+      const e = tt(o, t, n, s, getDisplay);
       r.children.push(e);
     }
   }
@@ -1769,13 +1839,16 @@ function tt(e, t, n = () => false, s) {
       }
       return e.nodeType === Node.ELEMENT_NODE;
     }),
-    c = (e) => i.indexOf(l[e]);
+    c = (e) => i.indexOf(l[e]),
+    containerIsFlexOrGrid = !a && isFlexOrGridContainer(e, getDisplay);
   if (
     (l.forEach((d, u) => {
       if (
         (null == o && (o = u),
         Ge(d) &&
-          (Qe(d) ||
+          !isInlineMathElement(d, getDisplay) &&
+          (Qe(d, getDisplay) ||
+            containerIsFlexOrGrid ||
             (function (e, t, n) {
               const s = e[t];
               if (!Ge(s)) return false;
@@ -1785,7 +1858,7 @@ function tt(e, t, n = () => false, s) {
                 if (r && Ge(r) && et(r)) return true;
                 if (o && Ge(o) && et(o)) return true;
               }
-              return r ? Ge(r) && Qe(r) : !o || (Ge(o) && Qe(o));
+              return r ? Ge(r) && Qe(r, getDisplay) : !o || (Ge(o) && Qe(o, getDisplay));
             })(l, u, a)))
       ) {
         const a = u - 1;
@@ -1802,7 +1875,7 @@ function tt(e, t, n = () => false, s) {
             return Ze.includes(t);
           })(d) && !n(d))
         ) {
-          const e = tt(d, t, n, s);
+          const e = tt(d, t, n, s, getDisplay);
           r.children.push(e);
         }
       }
@@ -1910,7 +1983,7 @@ function at() {
             (t += `--hcfy-result-text-size:${e.pageTrsResultStyleTextSize}em;`),
           e.pageTrsResultStyleTextWeight &&
             (t += `--hcfy-result-text-weight:${e.pageTrsResultStyleTextWeight};`),
-          (t += "}"),
+          (t += "}\nhcfy-result.__hcfy-result-comparison-block__{margin-top:0.4em;margin-bottom:0.2em;text-indent:0;}\n"),
           "STYLE_CUSTOM" === e.pageTrsResultStyleId
             ? (t += e.pageTrsResultStyleCustom)
             : (t += ot[e.pageTrsResultStyleId] || ""),
@@ -1925,12 +1998,25 @@ function lt(e) {
 function ct(e) {
   return Array.prototype.some.call(e.childNodes, (e) => "hcfy-result" === e.nodeName.toLowerCase());
 }
+function shouldSkipElement(el, getDisplay = (node) => window.getComputedStyle(node).display) {
+  if (!(el instanceof Element)) return false;
+  const tag = el.tagName.toLowerCase();
+  if ("hcfy-result" === tag || ct(el)) return true;
+  if ("1" === el.getAttribute("data-hcfy-ignore")) return true;
+  if (el.hidden || "no" === el.getAttribute("translate") || el.classList?.contains("notranslate")) {
+    return true;
+  }
+  return "none" === getDisplay(el);
+}
 class dt {
   groups = new Map();
+  destroyed = false;
+  titleTimer = null;
   mutationObserver = new MutationObserver((e) => {
     e.forEach((e) => {
       (e.addedNodes.forEach((e) => {
         Ge(e) &&
+          e.isConnected &&
           !(function (e, t) {
             let n = e;
             do {
@@ -1940,7 +2026,13 @@ class dt {
             return false;
           })(e, (e) => {
             const t = e.tagName.toLowerCase();
-            return "pre" === t || "hcfy-result" === t || !!ct(e) || undefined;
+            return (
+              "pre" === t ||
+              "hcfy-result" === t ||
+              "1" === e.getAttribute("data-hcfy-ignore") ||
+              !!ct(e) ||
+              undefined
+            );
           }) &&
           this.analysis(e);
       }),
@@ -1955,15 +2047,21 @@ class dt {
     });
   });
   intersectionObserver = new IntersectionObserver(
-    (e) => {
-      e.forEach((e) => {
-        if (0 === e.intersectionRatio) return;
-        const t = this.groups.get(e.target);
-        t && t.translate();
-      });
+    (entries) => {
+      const visibleEntries = entries
+        .filter((entry) => entry.isIntersecting)
+        .map((entry) => ({
+          entry,
+          score: computeViewportPriority(entry.target, entry.boundingClientRect),
+        }))
+        .sort((a, b) => compareViewportPriority(a.score, b.score));
+      for (const { entry } of visibleEntries) {
+        const group = this.groups.get(entry.target);
+        if (group) group.translate();
+      }
     },
     {
-      rootMargin: `${window.screen.availHeight * window.devicePixelRatio}px ${window.screen.availWidth * window.devicePixelRatio}px`,
+      rootMargin: `${Math.min(200, Math.round((window.innerHeight || 800) * 0.2))}px 0px`,
     }
   );
   constructor(e, t = mod_94903.a.both, n = document.body, s) {
@@ -1973,7 +2071,6 @@ class dt {
       (this.showType = t),
       (this.titleNode = new nt(e)),
       this.titleNode.switchShowType(t),
-      this.titleNode.translate(),
       this.analysis(n));
     const r = document.getElementsByTagName("sr-read")[0];
     (r && this.analysis(r),
@@ -1981,31 +2078,88 @@ class dt {
         childList: true,
         subtree: true,
       }));
+    if ((window.scrollY || document.documentElement.scrollTop || 0) < 100) {
+      this.titleNode.translate();
+    } else {
+      this.titleTimer = setTimeout(() => {
+        this.titleTimer = null;
+        if (!this.destroyed) {
+          this.titleNode.translate();
+        }
+      }, 400);
+    }
   }
   analysis(e) {
     const { groups: t, translateFn: n } = this;
+    const displayCache = new Map();
+    const getDisplay = (el) => {
+      let disp = displayCache.get(el);
+      if (disp === undefined) {
+        disp = window.getComputedStyle(el).display;
+        displayCache.set(el, disp);
+      }
+      return disp;
+    };
+    const pendingNodes = [];
+    const pendingOnlyChild = [];
     tt(
       e,
-      (e, s, r, o) => {
-        let i = t.get(e);
-        i ||
-          ((i = new Xe(e, s, n, this.options)),
-          t.set(e, i),
-          e instanceof Element && this.intersectionObserver.observe(e));
-        i.add(r, o).switchShowType(this.showType);
+      (rootNode, childNodesSnapshot, startIdx, endIdx) => {
+        pendingNodes.push({ rootNode, childNodesSnapshot, startIdx, endIdx });
       },
-      (e) => "hcfy-result" === e.tagName.toLowerCase() || ct(e),
-      (e) => {
-        const n = t.get(e.element);
-        n && n.setOnlyChild();
-      }
+      (el) => shouldSkipElement(el, getDisplay),
+      (entry) => {
+        pendingOnlyChild.push(entry);
+      },
+      getDisplay
     );
+
+    const rootStyleCache = new Map();
+    for (const { rootNode } of pendingNodes) {
+      if (!rootStyleCache.has(rootNode)) {
+        let containerDisplay = "";
+        let isInlineSpan = false;
+        if (rootNode instanceof Element) {
+          containerDisplay = getDisplay(rootNode);
+          isInlineSpan =
+            "span" === rootNode.nodeName.toLowerCase() && containerDisplay.startsWith("inline");
+        }
+        rootStyleCache.set(rootNode, { containerDisplay, isInlineSpan });
+      }
+    }
+
+    for (const { rootNode, childNodesSnapshot, startIdx, endIdx } of pendingNodes) {
+      let i = t.get(rootNode);
+      if (!i) {
+        const styleMeta = rootStyleCache.get(rootNode);
+        i = new Xe(rootNode, childNodesSnapshot, n, {
+          ...this.options,
+          containerDisplay: styleMeta?.containerDisplay || "",
+          isInlineSpan: !!styleMeta?.isInlineSpan,
+        });
+        t.set(rootNode, i);
+        if (rootNode instanceof Element) {
+          this.intersectionObserver.observe(rootNode);
+        }
+      }
+      i.add(startIdx, endIdx).switchShowType(this.showType);
+    }
+
+    for (const entry of pendingOnlyChild) {
+      const group = t.get(entry.element);
+      group && group.setOnlyChild();
+    }
   }
   switchShowType(e) {
     ((this.showType = e), this.titleNode.switchShowType(e));
     for (const t of this.groups.values()) t.switchShowType(e);
   }
   destroy() {
+    this.destroyed = true;
+    if (this.titleTimer) {
+      clearTimeout(this.titleTimer);
+      this.titleTimer = null;
+    }
     (this.intersectionObserver.disconnect(),
       this.mutationObserver.disconnect(),
       this.titleNode.destroy());
@@ -2028,7 +2182,7 @@ class dt {
         } else {
           const hasText = node.sourceNodes.some((src) => {
             const txt = src.textContent?.trim();
-            return txt && !/^[0-9\s.\-_#:()!•+~@$%^&*\n/`]+$/.test(txt);
+            return txt && !/^[0-9\s.,\-_#:()[\]!•+~@$%^&*\n/`]+$/.test(txt);
           });
           if (hasText) total += 1;
         }
@@ -2105,9 +2259,11 @@ function Bt(e) {
           r.current = e;
         }, [e]),
         React.useEffect(() => {
-          zt.getMode().then((e) => {
-            (n(e), r.current?.(e));
-          });
+          zt.getMode()
+            .then((e) => {
+              (n(e), r.current?.(e));
+            })
+            .catch(() => {});
         }, []),
         React.useEffect(
           () => (
@@ -2228,13 +2384,14 @@ function Bt(e) {
         editable: editableCfg.pageTrsEditable,
       });
     })(
-      (text, onChunk) =>
+      (text, onChunk, targetNode) =>
         new Promise((resolve, reject) =>
           r.addStream({
             text,
             onChunk,
             resolve,
             reject,
+            targetNode,
           })
         ),
       e
@@ -2458,6 +2615,357 @@ const cn = new (class {
     this.topParsedData = null;
   }
 })();
+function findBestVideoElement() {
+  const videos = Array.from(document.querySelectorAll("video"));
+  if (videos.length === 0) return null;
+  let best = videos[0];
+  let bestScore = -1;
+  for (const video of videos) {
+    const rect = video.getBoundingClientRect();
+    const area = Math.max(0, rect.width * rect.height);
+    const score =
+      (video.readyState > 0 ? 1e8 : 0) +
+      (!video.paused ? 5e7 : 0) +
+      area;
+    if (score > bestScore) {
+      bestScore = score;
+      best = video;
+    }
+  }
+  return best;
+}
+
+function detectDomVideoSubtitles() {
+  const videos = Array.from(document.querySelectorAll("video"));
+  const tracks = [];
+  for (const video of videos) {
+    const rawTracks = Array.from(video.textTracks || []);
+    rawTracks.forEach((track, idx) => {
+      const cueList = Array.from(track.cues || []);
+      if (cueList.length === 0) return;
+      const cues = cueList
+        .map((cue) => ({
+          from: Number(cue.startTime ?? 0),
+          to: Number(cue.endTime ?? 0),
+          content: String(cue.text || "").trim(),
+        }))
+        .filter((c) => c.content.length > 0)
+        .sort((a, b) => a.from - b.from);
+      if (cues.length === 0) return;
+      const lan = track.language || "";
+      const lanDoc = track.label || lan || `HTML5 轨道 ${tracks.length + 1}`;
+      tracks.push({
+        key: `dom-${tracks.length}-${lan || idx}`,
+        id: `dom-${tracks.length}`,
+        lan,
+        lanDoc,
+        author: "",
+        subtitleUrl: "",
+        cues,
+        totalCues: cues.length,
+      });
+    });
+  }
+  if (tracks.length === 0) return null;
+  return {
+    ok: true,
+    partial: false,
+    source: "dom",
+    videoTitle: document.title,
+    trackCount: tracks.length,
+    tracks,
+    track: tracks[0],
+    firstSubtitle: tracks[0]?.cues?.[0] || null,
+    totalCues: tracks[0]?.totalCues || 0,
+  };
+}
+
+function SubtitleSidePanel({ open, state, onRefresh, onClose }) {
+  const { loading, data, error } = state || {};
+  const tracks = Array.isArray(data?.tracks) ? data.tracks : [];
+  const [selectedTrackKeys, setSelectedTrackKeys] = React.useState([]);
+  const [videoTime, setVideoTime] = React.useState(0);
+  const [autoFollow, setAutoFollow] = React.useState(true);
+
+  const streamRef = React.useRef(null);
+  const slotRefs = React.useRef([]);
+  const prevActiveRef = React.useRef(-1);
+  const lastProgrammaticTopRef = React.useRef(0);
+  const userScrollingUntilRef = React.useRef(0);
+  const loadedUrlRef = React.useRef("");
+
+  React.useEffect(() => {
+    if (!open) return;
+    loadedUrlRef.current = window.location.href;
+  }, [open, data]);
+
+  React.useEffect(() => {
+    setSelectedTrackKeys(pickDefaultSelectedTrackKeys(tracks));
+    setAutoFollow(true);
+    prevActiveRef.current = -1;
+  }, [data]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    let currentVideo = findBestVideoElement();
+    const syncTime = () => {
+      const candidate = findBestVideoElement();
+      if (candidate !== currentVideo) {
+        if (currentVideo) {
+          currentVideo.removeEventListener("timeupdate", syncTime);
+          currentVideo.removeEventListener("seeked", syncTime);
+          currentVideo.removeEventListener("playing", syncTime);
+        }
+        currentVideo = candidate;
+        if (currentVideo) {
+          currentVideo.addEventListener("timeupdate", syncTime);
+          currentVideo.addEventListener("seeked", syncTime);
+          currentVideo.addEventListener("playing", syncTime);
+        }
+      }
+      if (currentVideo && Number.isFinite(currentVideo.currentTime)) {
+        setVideoTime(currentVideo.currentTime);
+      }
+      if (loadedUrlRef.current && window.location.href !== loadedUrlRef.current) {
+        loadedUrlRef.current = window.location.href;
+        onRefresh?.();
+      }
+    };
+    if (currentVideo) {
+      currentVideo.addEventListener("timeupdate", syncTime);
+      currentVideo.addEventListener("seeked", syncTime);
+      currentVideo.addEventListener("playing", syncTime);
+    }
+    syncTime();
+    const timer = window.setInterval(syncTime, 120);
+    return () => {
+      window.clearInterval(timer);
+      if (currentVideo) {
+        currentVideo.removeEventListener("timeupdate", syncTime);
+        currentVideo.removeEventListener("seeked", syncTime);
+        currentVideo.removeEventListener("playing", syncTime);
+      }
+    };
+  }, [open, onRefresh]);
+
+  const rows = React.useMemo(
+    () => mergeSubtitleTimelineRows(tracks, selectedTrackKeys),
+    [tracks, selectedTrackKeys]
+  );
+
+  const activeIndex = React.useMemo(
+    () => findActiveSubtitleIndex(rows, videoTime),
+    [rows, videoTime]
+  );
+
+  const scrollActiveToFifthRow = React.useCallback(
+    (idx, behavior = "smooth") => {
+      const streamEl = streamRef.current;
+      if (!streamEl || idx < 0) return;
+      const topSlotEl = slotRefs.current[idx];
+      if (!topSlotEl) return;
+      const streamRect = streamEl.getBoundingClientRect();
+      const topRect = topSlotEl.getBoundingClientRect();
+      const targetTop = Math.max(0, streamEl.scrollTop + (topRect.top - streamRect.top));
+      lastProgrammaticTopRef.current = targetTop;
+      streamEl.scrollTo({ top: targetTop, behavior });
+    },
+    []
+  );
+
+  React.useEffect(() => {
+    if (!open || !autoFollow || activeIndex < 0) return;
+    const prevIdx = prevActiveRef.current;
+    const isStepForward = prevIdx >= 0 && Math.abs(activeIndex - prevIdx) <= 2;
+    prevActiveRef.current = activeIndex;
+    scrollActiveToFifthRow(activeIndex, isStepForward ? "smooth" : "auto");
+  }, [open, autoFollow, activeIndex, rows, scrollActiveToFifthRow]);
+
+  const handleToggleTrack = (trackKey) => {
+    setSelectedTrackKeys((prev) =>
+      prev.includes(trackKey) ? prev.filter((k) => k !== trackKey) : [...prev, trackKey]
+    );
+  };
+
+  const handleSeekToRow = (row) => {
+    const video = findBestVideoElement();
+    if (video && Number.isFinite(row.from)) {
+      video.currentTime = Math.max(0, row.from + 0.01);
+    }
+    setAutoFollow(true);
+    setVideoTime(row.from + 0.01);
+  };
+
+  const handleStreamUserScroll = () => {
+    const streamEl = streamRef.current;
+    if (!streamEl) return;
+    if (Date.now() < userScrollingUntilRef.current) {
+      if (Math.abs(streamEl.scrollTop - lastProgrammaticTopRef.current) > 40) {
+        setAutoFollow(false);
+      }
+    }
+  };
+
+  if (!open) return null;
+
+  slotRefs.current.length = SUBTITLE_LEAD_PAD_COUNT + rows.length;
+  const showLangTags = selectedTrackKeys.length > 1;
+
+  return (
+    <aside id="ndt-subtitle-panel" aria-label="视频字幕流窗口">
+      <div className="ndt-sub-header">
+        <div className="ndt-sub-header-left">
+          <span className="ndt-sub-title" title={data?.videoTitle || "字幕流"}>
+            {data?.videoTitle ? data.videoTitle : "字幕流"}
+          </span>
+          <span className="ndt-sub-clock">{formatSubtitleTime(videoTime)}</span>
+        </div>
+        <div className="ndt-sub-actions">
+          {!autoFollow && rows.length > 0 && (
+            <button
+              type="button"
+              className="ndt-sub-follow-btn"
+              onClick={() => {
+                setAutoFollow(true);
+                scrollActiveToFifthRow(activeIndex, "smooth");
+              }}
+            >
+              回到第5行
+            </button>
+          )}
+          <AnchorButton
+            icon={<Icon icon="refresh" size={14} />}
+            onClick={onRefresh}
+            small
+            minimal
+            title="刷新字幕"
+          />
+          <AnchorButton
+            icon={<Icon icon="cross" size={14} />}
+            onClick={onClose}
+            small
+            minimal
+            title="关闭"
+          />
+        </div>
+      </div>
+
+      {!loading && !error && data?.ok && tracks.length > 0 && (
+        <div className="ndt-sub-tracks" aria-label="字幕语言选择">
+          {tracks.map((track) => {
+            const checked = selectedTrackKeys.includes(track.key);
+            return (
+              <label
+                key={track.key}
+                className={`ndt-sub-track-checkbox${checked ? " is-checked" : ""}`}
+                title={`${track.lanDoc}${track.author ? ` · ${track.author}` : ""}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => handleToggleTrack(track.key)}
+                />
+                <span>{track.lanDoc || track.lan || "字幕"}</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="ndt-sub-body">
+        {loading && <div className="ndt-sub-hint">正在探测当前视频字幕...</div>}
+        {!loading && error && <div className="ndt-sub-error">{error}</div>}
+        {!loading && !error && data?.ok && (
+          <>
+            {data.partial && data.needLoginSubtitle ? (
+              <div className="ndt-sub-hint">
+                已探测到 {tracks.length} 条字幕轨，但当前 B 站未登录（need_login_subtitle=true），B 站接口未返回字幕正文 URL；登录后点击刷新即可显示多语言字幕流。
+              </div>
+            ) : selectedTrackKeys.length === 0 ? (
+              <div className="ndt-sub-hint">请在顶部勾选至少一条字幕以显示字幕流。</div>
+            ) : rows.length === 0 ? (
+              <div className="ndt-sub-hint">所选字幕轨道内暂无字幕内容。</div>
+            ) : (
+              <div
+                ref={streamRef}
+                className="ndt-sub-stream"
+                onWheel={() => {
+                  userScrollingUntilRef.current = Date.now() + 800;
+                }}
+                onTouchMove={() => {
+                  userScrollingUntilRef.current = Date.now() + 800;
+                }}
+                onScroll={handleStreamUserScroll}
+              >
+                {Array.from({ length: SUBTITLE_LEAD_PAD_COUNT }).map((_, padIdx) => (
+                  <div
+                    key={`pad-${padIdx}`}
+                    ref={(el) => {
+                      slotRefs.current[padIdx] = el;
+                    }}
+                    className="ndt-sub-row-pad"
+                    aria-hidden="true"
+                  >
+                    ·
+                  </div>
+                ))}
+                {rows.map((row, idx) => {
+                  const isActive = idx === activeIndex;
+                  const statusClass = isActive
+                    ? "is-active"
+                    : idx < activeIndex
+                      ? "is-past"
+                      : "is-future";
+                  return (
+                    <div
+                      key={row.key}
+                      ref={(el) => {
+                        slotRefs.current[SUBTITLE_LEAD_PAD_COUNT + idx] = el;
+                      }}
+                      className={`ndt-sub-row ${statusClass}`}
+                      onClick={() => handleSeekToRow(row)}
+                      title="点击跳转到该句视频时间"
+                    >
+                      <div className="ndt-sub-row-head">
+                        <span className="ndt-sub-row-time">
+                          {formatSubtitleTime(row.from, true)} - {formatSubtitleTime(row.to, true)}
+                        </span>
+                        {isActive && <span className="ndt-sub-row-badge">当前 · 第5行</span>}
+                      </div>
+                      <div className="ndt-sub-lines">
+                        {row.items.map((item) => (
+                          <div key={`${row.key}-${item.trackKey}`} className="ndt-sub-line">
+                            {showLangTags && (
+                              <span className="ndt-sub-lang-tag">
+                                {item.lan || item.lanDoc}
+                              </span>
+                            )}
+                            <span>{item.content}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="ndt-sub-stream-tail" aria-hidden="true" />
+              </div>
+            )}
+          </>
+        )}
+        {!loading && !error && data && !data.ok && (
+          <div className="ndt-sub-hint">
+            {data.reason === "NOT_BILIBILI" && "当前页面不是 B 站视频页，且未检测到 HTML5 视频字幕轨。"}
+            {data.reason === "NOT_BILIBILI_VIDEO" && "当前在 B 站页面，但未识别到具体视频 BV/AV 号，请打开视频播放页后重试。"}
+            {data.reason === "NEED_LOGIN" &&
+              "当前 B 站未登录，播放器接口返回 need_login_subtitle=true，请先登录 B 站后再试。"}
+            {data.reason === "NO_SUBTITLE" && "当前 B 站视频未检测到 CC 字幕。"}
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
 function Comp_Dn(e) {
   const { portalContainer: t } = e,
     { t: trLocal } = useI18n(),
@@ -2496,6 +3004,12 @@ function Comp_Dn(e) {
     k = React.useRef(null),
     [j, N] = React.useState(),
     [A, z] = React.useState(false),
+    [subtitleOpen, setSubtitleOpen] = React.useState(false),
+    [subtitleState, setSubtitleState] = React.useState({
+      loading: false,
+      data: null,
+      error: "",
+    }),
     [$, D] = React.useState(undefined),
     B = (() => {
       const e = window.location.href;
@@ -2563,6 +3077,30 @@ function Comp_Dn(e) {
   const ee = React.useCallback(() => {
     (E(null), Z());
   }, []);
+  const loadSubtitles = React.useCallback(async () => {
+    setSubtitleOpen(true);
+    setSubtitleState({ loading: true, data: null, error: "" });
+    try {
+      const res = await mod_67116._({
+        action: "fetch bilibili subtitles",
+        pageUrl: window.location.href,
+      });
+      if (res && !res.ok && res.reason === "NOT_BILIBILI") {
+        const domRes = detectDomVideoSubtitles();
+        if (domRes) {
+          setSubtitleState({ loading: false, data: domRes, error: "" });
+          return;
+        }
+      }
+      setSubtitleState({ loading: false, data: res, error: "" });
+    } catch (err) {
+      setSubtitleState({
+        loading: false,
+        data: null,
+        error: err?.message || "探测字幕失败",
+      });
+    }
+  }, []);
   (React.useEffect(
     () =>
       mod_67116.x((e) => {
@@ -2572,11 +3110,14 @@ function Comp_Dn(e) {
           case "page translate":
             z((e) => !e);
             break;
+          case "open subtitle panel":
+            loadSubtitles();
+            return Promise.resolve({ open: true });
           case "play":
             G.current?.play();
         }
       }),
-    [C, ee]
+    [C, ee, loadSubtitles]
   ),
     React.useEffect(() => {
       undefined !== B &&
@@ -2680,6 +3221,12 @@ function Comp_Dn(e) {
         setOpen={z}
         portalContainer={t}
         pos={n ? n.pageTrsPanelPos : on.pageTrsPanelPos}
+      />
+      <SubtitleSidePanel
+        open={subtitleOpen}
+        state={subtitleState}
+        onRefresh={loadSubtitles}
+        onClose={() => setSubtitleOpen(false)}
       />
     </div>
   );

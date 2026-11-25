@@ -1,13 +1,19 @@
 {
   "name": "hcfy-refactored",
   "version": "1.0.0",
+  "license": "GPL-3.0",
   "private": true,
   "description": "无登翻译 (MV3 Extension)",
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:firefox": "node scripts/build.mjs --target=firefox",
+    "build:all": "node scripts/build.mjs --target=all",
     "watch": "node scripts/build.mjs --watch",
+    "watch:firefox": "node scripts/build.mjs --target=firefox --watch",
     "pack": "node scripts/pack.mjs",
+    "pack:firefox": "node scripts/pack.mjs --target=firefox",
+    "pack:all": "node scripts/pack.mjs --target=all",
     "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx,css}\""
   },
   "dependencies": {

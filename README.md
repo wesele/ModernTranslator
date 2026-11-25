@@ -23,8 +23,15 @@
 
 ```bash
 npm install
-npm run build   # 输出可加载的 MV3 扩展至 dist/
-npm run watch   # 开发监听模式
+npm run build          # 输出 Chrome/Edge MV3 扩展至 dist/
+npm run build:firefox  # 输出 Firefox MV3 扩展至 dist-firefox/
+npm run build:all      # 同时构建 Chrome 与 Firefox 版本
+npm run watch          # Chrome 开发监听模式
+npm run watch:firefox  # Firefox 开发监听模式
+npm run pack           # 打包 Chrome 发布包 -> release/modern-translator-v<version>.zip
+npm run pack:firefox   # 打包 Firefox 发布包 -> release/modern-translator-firefox-v<version>.zip
+npm run pack:all       # 同时打包 Chrome 与 Firefox 发布包
 ```
 
-构建完成后，在 Chrome 打开 `chrome://extensions/`，开启“开发者模式”，选择“加载已解压的扩展程序”并指向 `dist/` 目录即可。
+- **Chrome / Edge**：打开 `chrome://extensions/`，开启“开发者模式”，选择“加载已解压的扩展程序”并指向 `dist/` 目录。
+- **Firefox（140+）**：打开 `about:debugging#/runtime/this-firefox`，点击“临时载入附加组件...”，选择 `dist-firefox/manifest.json` 即可。

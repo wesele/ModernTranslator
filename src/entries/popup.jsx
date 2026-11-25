@@ -36,13 +36,46 @@ const POPUP_STORAGE_DEFAULTS = {
   ...pick(secondaryOptions, ["pageTrsType"]),
 };
 
+const extApi = typeof browser !== "undefined" ? browser : chrome;
+
 async function getActiveTab() {
-  const tabs = await chrome.tabs.query({
+  const tabs = await extApi.tabs.query({
     active: true,
-    highlighted: true,
-    windowId: chrome.windows.WINDOW_ID_CURRENT,
+    currentWindow: true,
   });
-  return tabs[0] || (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+  return tabs[0] || (await extApi.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+}
+
+async function hasAllUrlsPermission() {
+  if (!extApi.permissions?.contains) return true;
+  try {
+    return await extApi.permissions.contains({ origins: ["<all_urls>"] });
+  } catch {
+    return true;
+  }
+}
+
+async function injectContentScripts(tabId) {
+  if (!tabId || !extApi.scripting?.executeScript) return false;
+  try {
+    await extApi.scripting.executeScript({
+      target: { tabId },
+      files: ["c.js"],
+    });
+    extApi.scripting
+      .executeScript({
+        target: { tabId, allFrames: true },
+        files: ["ca.js"],
+      })
+      .catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function waitMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function PopupApp() {
@@ -65,10 +98,13 @@ function PopupApp() {
   const [settings, setSettings] = useStorage(POPUP_STORAGE_DEFAULTS);
   const [tabId, setTabId] = React.useState(null);
   const [tabSupported, setTabSupported] = React.useState(true);
+  const [needsHostPermission, setNeedsHostPermission] = React.useState(false);
+  const [grantingPermission, setGrantingPermission] = React.useState(false);
   const [pageActive, setPageActive] = React.useState(false);
   const [pageTranslating, setPageTranslating] = React.useState(false);
   const [actionPending, setActionPending] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState("");
+  const injectedTabRef = React.useRef(null);
 
   const source = settings?.pageTrsSource ?? POPUP_STORAGE_DEFAULTS.pageTrsSource;
   const target = settings?.pageTrsDest?.[0] || POPUP_STORAGE_DEFAULTS.pageTrsDest[0];
@@ -125,20 +161,53 @@ function PopupApp() {
     settings?.customOpenAIServices,
   ]);
 
-  const syncTabStatus = React.useCallback(async (id) => {
-    if (!id) return;
+  const syncTabStatus = React.useCallback(async (id, allowInject = false) => {
+    if (!id) return false;
     try {
-      const status = await messaging._("get page translate status", id);
+      const status = await messaging._("get page translate status", id, { frameId: 0 });
       if (status) {
+        setNeedsHostPermission(false);
         setTabSupported(true);
         setPageActive(Boolean(status.active));
         setPageTranslating(Boolean(status.translating));
+        return true;
       }
     } catch {
+      const granted = await hasAllUrlsPermission();
+      if (!granted) {
+        setNeedsHostPermission(true);
+        setTabSupported(false);
+        setPageActive(false);
+        setPageTranslating(false);
+        return false;
+      }
+      setNeedsHostPermission(false);
+      if (allowInject && injectedTabRef.current !== id) {
+        injectedTabRef.current = id;
+        const injected = await injectContentScripts(id);
+        if (injected) {
+          for (let attempt = 0; attempt < 5; attempt += 1) {
+            await waitMs(80);
+            try {
+              const status = await messaging._("get page translate status", id, { frameId: 0 });
+              if (status) {
+                setTabSupported(true);
+                setPageActive(Boolean(status.active));
+                setPageTranslating(Boolean(status.translating));
+                return true;
+              }
+            } catch {
+              // wait for content script mount
+            }
+          }
+        }
+      }
       setTabSupported(false);
       setPageActive(false);
       setPageTranslating(false);
+      return false;
     }
+    return false;
   }, []);
 
   React.useEffect(() => {
@@ -153,10 +222,10 @@ function PopupApp() {
         setTabSupported(false);
         return;
       }
-      syncTabStatus(id);
+      syncTabStatus(id, true);
       timerId = setInterval(() => {
-        syncTabStatus(id);
-      }, 250);
+        syncTabStatus(id, false);
+      }, 300);
     });
 
     return () => {
@@ -171,10 +240,31 @@ function PopupApp() {
       if (!id) {
         throw new Error(t("popup.tabNotFound"));
       }
-      return messaging._(message, id);
+      return messaging._(message, id, { frameId: 0 });
     },
     [tabId, t]
   );
+
+  const handleGrantHostPermission = async () => {
+    if (grantingPermission || !extApi.permissions?.request) return;
+    setErrorMsg("");
+    setGrantingPermission(true);
+    try {
+      const granted = await extApi.permissions.request({ origins: ["<all_urls>"] });
+      if (granted) {
+        setNeedsHostPermission(false);
+        injectedTabRef.current = null;
+        const activeId = tabId ?? (await getActiveTab())?.id;
+        if (activeId) {
+          await syncTabStatus(activeId, true);
+        }
+      }
+    } catch {
+      // user cancelled or browser blocked prompt
+    } finally {
+      setGrantingPermission(false);
+    }
+  };
 
   const updateAndMaybeRestart = (patch) => {
     setErrorMsg("");
@@ -258,6 +348,17 @@ function PopupApp() {
         chrome.runtime.openOptionsPage();
         window.close();
       });
+  };
+
+  const handleOpenSubtitlePanel = async () => {
+    setErrorMsg("");
+    try {
+      await sendTabCommand("open subtitle panel");
+      window.close();
+    } catch {
+      setTabSupported(false);
+      setErrorMsg(t("popup.unsupportedPage"));
+    }
   };
 
   return (
@@ -362,36 +463,84 @@ function PopupApp() {
           </div>
         </section>
 
-        {(!tabSupported || errorMsg) && (
-          <div className="popup-notice">
-            {errorMsg || t("popup.unsupportedTabHint")}
+        {(needsHostPermission || !tabSupported || errorMsg) && (
+          <div className={`popup-notice ${needsHostPermission ? "is-permission" : ""}`}>
+            {needsHostPermission
+              ? t("popup.needPermissionHint")
+              : errorMsg || t("popup.unsupportedTabHint")}
           </div>
         )}
 
         <div className="primary-action-wrap">
-          <button
-            type="button"
-            className={`primary-cta ${pageActive ? "is-cancel" : ""}`}
-            disabled={!tabSupported || actionPending}
-            onClick={handleToggleTranslate}
-          >
-            <Icon icon={pageActive ? "stop" : "translate"} size={14} />
-            <span>{pageActive ? t("popup.cancelTranslateBtn") : t("popup.translateBtn")}</span>
-          </button>
+          {needsHostPermission ? (
+            <button
+              type="button"
+              className="primary-cta"
+              disabled={grantingPermission}
+              onClick={handleGrantHostPermission}
+            >
+              <Icon icon="key" size={14} />
+              <span>{t("popup.grantPermissionBtn")}</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={`primary-cta ${pageActive ? "is-cancel" : ""}`}
+              disabled={!tabSupported || actionPending}
+              onClick={handleToggleTranslate}
+            >
+              <Icon icon={pageActive ? "stop" : "translate"} size={14} />
+              <span>{pageActive ? t("popup.cancelTranslateBtn") : t("popup.translateBtn")}</span>
+            </button>
+          )}
         </div>
       </main>
 
       <footer className="popup-footer">
         <span className="footer-hint">{t("popup.footerHint")}</span>
-        <button
-          type="button"
-          className="settings-btn"
-          onClick={handleOpenSettings}
-          title={t("popup.openSettingsTitle")}
-        >
-          <Icon icon="cog" size={12} />
-          <span>{t("popup.settingsBtn")}</span>
-        </button>
+        <div className="footer-actions">
+          <button
+            type="button"
+            className="settings-btn subtitle-btn"
+            disabled={!tabSupported}
+            onClick={handleOpenSubtitlePanel}
+            title={t("popup.subtitleBtnTitle")}
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden="true"
+            >
+              <rect
+                x="1.5"
+                y="3"
+                width="13"
+                height="10"
+                rx="2"
+                stroke="currentColor"
+                strokeWidth="1.4"
+              />
+              <path
+                d="M4 9.5H8.5M10.5 9.5H12M4 7H6M7.5 7H12"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+              />
+            </svg>
+            <span>{t("popup.subtitleBtn")}</span>
+          </button>
+          <button
+            type="button"
+            className="settings-btn"
+            onClick={handleOpenSettings}
+            title={t("popup.openSettingsTitle")}
+          >
+            <Icon icon="cog" size={12} />
+            <span>{t("popup.settingsBtn")}</span>
+          </button>
+        </div>
       </footer>
     </div>
   );

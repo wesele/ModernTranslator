@@ -15,7 +15,11 @@ function l(e) {
           const e = u.current?.shadowRoot;
           e &&
             setTimeout(() => {
-              e.adoptedStyleSheets = [];
+              try {
+                e.adoptedStyleSheets = [];
+              } catch {
+                // Firefox Xray wrapper may reject adoptedStyleSheets assignment in content scripts
+              }
             }, 800);
         }
       };

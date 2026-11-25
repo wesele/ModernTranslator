@@ -66,7 +66,7 @@
       "open_in_tab": true,
       "page": "settings.html"
    },
-   "permissions": [ "contextMenus", "storage", "clipboardWrite", "offscreen", "declarativeNetRequestWithHostAccess" ],
+   "permissions": [ "contextMenus", "storage", "clipboardWrite", "offscreen", "declarativeNetRequestWithHostAccess", "scripting" ],
    "version": "1.0.0",
    "web_accessible_resources": [ {
       "matches": [ "<all_urls>" ],

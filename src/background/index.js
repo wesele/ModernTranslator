@@ -43,6 +43,8 @@ import {
   getTranslationCacheStats,
   clearTranslationCache,
 } from "./translationCache.js";
+import { fetchBilibiliSubtitles } from "../shared/bilibiliSubtitle.js";
+import { writeToClipboard, playWithAudio, playWithSpeech } from "../shared/domMedia.js";
 
 // Forward iframe selection messages between frames
 chrome.runtime.onMessage.addListener((msg, sender) => {
@@ -50,9 +52,9 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   const tabId = sender.tab?.id;
   if (tabId == null) return;
   if (msg.target === "top") {
-    chrome.tabs.sendMessage(tabId, msg, { frameId: 0 });
+    chrome.tabs.sendMessage(tabId, msg, { frameId: 0 }).catch(noop);
   } else {
-    chrome.tabs.sendMessage(tabId, msg);
+    chrome.tabs.sendMessage(tabId, msg).catch(noop);
   }
 });
 
@@ -67,17 +69,31 @@ function pushUnique(arr, item) {
   if (!arr.includes(item)) arr.push(item);
 }
 
+let memoryAutoStore = { tabIds: [], winIds: [] };
 const autoModeStore = new (class extends EventEmitter {
   async getData() {
-    return (
-      (await chrome.storage.session.get("AutoStore")).AutoStore ?? {
-        tabIds: [],
-        winIds: [],
-      }
-    );
+    if (chrome.storage?.session) {
+      return (
+        (await chrome.storage.session.get("AutoStore")).AutoStore ?? {
+          tabIds: [],
+          winIds: [],
+        }
+      );
+    }
+    return {
+      tabIds: [...memoryAutoStore.tabIds],
+      winIds: [...memoryAutoStore.winIds],
+    };
   }
   setData(data) {
-    return chrome.storage.session.set({ AutoStore: data });
+    if (chrome.storage?.session) {
+      return chrome.storage.session.set({ AutoStore: data });
+    }
+    memoryAutoStore = {
+      tabIds: [...data.tabIds],
+      winIds: [...data.winIds],
+    };
+    return Promise.resolve();
   }
   async #clearWindowTabs(windowId) {
     const tabs = await chrome.tabs.query({ windowId });
@@ -413,36 +429,76 @@ watchStorage(pick(defaultOptions, ["googleRegion", "googleMirror"]), (changes) =
   }
 });
 
-// Offscreen document helper (used for clipboard write and TTS playback)
-const OFFSCREEN_PATH = "offscreen.html";
-const OFFSCREEN_URL = chrome.runtime.getURL(OFFSCREEN_PATH);
-const hasOffscreenDocument =
-  "getContexts" in chrome.runtime
-    ? async () =>
-        Boolean(
+// Offscreen document helper (used in Chrome MV3 Service Worker; Firefox MV3 runs an Event Page with direct DOM access)
+let creatingOffscreenPromise = null;
+async function ensureOffscreenDocument() {
+  if (__TARGET_BROWSER__ === "firefox") return;
+  if (typeof chrome === "undefined" || !chrome.offscreen?.createDocument) return;
+  const offscreenPath = "offscreen.html";
+  const offscreenUrl = chrome.runtime.getURL(offscreenPath);
+  const exists =
+    "getContexts" in chrome.runtime
+      ? Boolean(
           (
             await chrome.runtime.getContexts({
               contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
-              documentUrls: [OFFSCREEN_URL],
+              documentUrls: [offscreenUrl],
             })
           ).length
         )
-    : async () => (await clients.matchAll()).some((client) => client.url.startsWith(OFFSCREEN_URL));
-
-let creatingOffscreenPromise = null;
-async function ensureOffscreenDocument() {
-  if (await hasOffscreenDocument()) return;
+      : typeof clients !== "undefined"
+        ? (await clients.matchAll()).some((client) => client.url.startsWith(offscreenUrl))
+        : false;
+  if (exists) return;
   if (creatingOffscreenPromise) {
     await creatingOffscreenPromise;
     return;
   }
   creatingOffscreenPromise = chrome.offscreen.createDocument({
-    url: OFFSCREEN_PATH,
+    url: offscreenPath,
     reasons: [chrome.offscreen.Reason.CLIPBOARD, chrome.offscreen.Reason.AUDIO_PLAYBACK],
     justification: "Audio TTS playback and copying translated text to the clipboard.",
   });
-  await creatingOffscreenPromise;
-  creatingOffscreenPromise = null;
+  try {
+    await creatingOffscreenPromise;
+  } finally {
+    creatingOffscreenPromise = null;
+  }
+}
+
+async function playAudioInHost(url, options) {
+  if (__TARGET_BROWSER__ !== "firefox" && typeof chrome !== "undefined" && chrome.offscreen?.createDocument) {
+    await ensureOffscreenDocument();
+    return sendMessage({
+      action: "dom: play with audio",
+      url,
+      options,
+    });
+  }
+  return playWithAudio(url, options);
+}
+
+async function playSpeechInHost(text, options) {
+  if (__TARGET_BROWSER__ !== "firefox" && typeof chrome !== "undefined" && chrome.offscreen?.createDocument) {
+    await ensureOffscreenDocument();
+    return sendMessage({
+      action: "dom: play with speech",
+      text,
+      options,
+    });
+  }
+  return playWithSpeech(text, options);
+}
+
+async function writeClipboardInHost(text) {
+  if (__TARGET_BROWSER__ !== "firefox" && typeof chrome !== "undefined" && chrome.offscreen?.createDocument) {
+    await ensureOffscreenDocument();
+    return sendMessage({
+      action: "dom: write to clipboard",
+      text,
+    });
+  }
+  return writeToClipboard(text);
 }
 
 // TTS settings & language map
@@ -523,13 +579,11 @@ watchStorage(AUDIO_STORAGE_KEYS, (changes) => {
 });
 
 async function getActiveTab() {
-  return (
-    await chrome.tabs.query({
-      active: true,
-      highlighted: true,
-      windowId: chrome.windows.WINDOW_ID_CURRENT,
-    })
-  )[0];
+  const tabs = await chrome.tabs.query({
+    active: true,
+    currentWindow: true,
+  });
+  return tabs[0] || (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
 }
 
 const DEST_KEYS = {
@@ -696,7 +750,6 @@ onMessage((msg) => {
 
     case "audio":
       return (async (audioReq) => {
-        await ensureOffscreenDocument();
         try {
           if (systemTTS === "prior") {
             throw new Error("始终使用系统语音朗读");
@@ -710,13 +763,9 @@ onMessage((msg) => {
           }
           if (!ttsUrl) throw new Error("跳过");
           audioDebug("开始用接口自带 TTS 地址朗读 %O", audioReq);
-          await sendMessage({
-            action: "dom: play with audio",
-            url: ttsUrl,
-            options: {
-              volume: audioVolume / 100,
-              playbackRate: audioRate,
-            },
+          await playAudioInHost(ttsUrl, {
+            volume: audioVolume / 100,
+            playbackRate: audioRate,
           });
         } catch (err) {
           if (systemTTS === "none") throw err;
@@ -736,11 +785,7 @@ onMessage((msg) => {
             if (!speechOpts.lang) speechOpts.lang = voiceLang;
             speechOpts.voiceName = systemTTSVoice[voiceLang];
           }
-          return sendMessage({
-            action: "dom: play with speech",
-            text: audioReq.text,
-            options: speechOpts,
-          });
+          return playSpeechInHost(audioReq.text, speechOpts);
         }
       })(msg.url);
 
@@ -751,12 +796,11 @@ onMessage((msg) => {
       return clearTranslationCache(msg.apiCode);
 
     case "write to clipboard":
-      return ensureOffscreenDocument().then(() =>
-        sendMessage({
-          action: "dom: write to clipboard",
-          text: msg.text,
-        })
-      );
+      return writeClipboardInHost(msg.text);
+
+    case "fetch bilibili subtitles":
+    case "fetch bilibili first subtitle":
+      return fetchBilibiliSubtitles({ pageUrl: msg.pageUrl });
   }
 });
 
@@ -777,13 +821,26 @@ function getContextMenus() {
   ];
 }
 
+let contextMenuSetupChain = Promise.resolve();
 function setupContextMenus() {
-  const menus = getContextMenus();
-  chrome.contextMenus.removeAll(() => {
-    menus.forEach((item) => {
-      chrome.contextMenus.create(item);
-    });
-  });
+  contextMenuSetupChain = contextMenuSetupChain
+    .then(
+      () =>
+        new Promise((resolve) => {
+          const menus = getContextMenus();
+          chrome.contextMenus.removeAll(() => {
+            void chrome.runtime.lastError;
+            menus.forEach((item) => {
+              chrome.contextMenus.create(item, () => {
+                void chrome.runtime.lastError;
+              });
+            });
+            resolve();
+          });
+        })
+    )
+    .catch(noop);
+  return contextMenuSetupChain;
 }
 
 chrome.runtime.onInstalled.addListener(setupContextMenus);
@@ -792,12 +849,62 @@ subscribeUiLocale(() => {
   setupContextMenus();
 });
 
+async function sendTabMessageWithInject(message, tabId) {
+  try {
+    return await sendMessage(message, tabId, { frameId: 0 });
+  } catch {
+    const extApi = typeof browser !== "undefined" ? browser : chrome;
+    if (!extApi.scripting?.executeScript) return;
+    try {
+      await extApi.scripting.executeScript({
+        target: { tabId },
+        files: ["c.js"],
+      });
+      extApi.scripting
+        .executeScript({
+          target: { tabId, allFrames: true },
+          files: ["ca.js"],
+        })
+        .catch(noop);
+      await new Promise((r) => setTimeout(r, 150));
+      return await sendMessage(message, tabId, { frameId: 0 });
+    } catch {
+      // restricted page or permission not granted
+    }
+  }
+}
+
+const extPermissionsApi = (typeof browser !== "undefined" ? browser : chrome).permissions;
+if (extPermissionsApi?.onAdded?.addListener) {
+  extPermissionsApi.onAdded.addListener(async (perms) => {
+    if (!perms?.origins?.length) return;
+    try {
+      const tab = await getActiveTab();
+      if (!tab?.id) return;
+      const extApi = typeof browser !== "undefined" ? browser : chrome;
+      if (!extApi.scripting?.executeScript) return;
+      await extApi.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["c.js"],
+      });
+      extApi.scripting
+        .executeScript({
+          target: { tabId: tab.id, allFrames: true },
+          files: ["ca.js"],
+        })
+        .catch(noop);
+    } catch {
+      // ignore restricted pages
+    }
+  });
+}
+
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!tab?.id) return;
   if (info.menuItemId === "translate") {
-    sendMessage("translate", tab.id).catch(noop);
+    sendTabMessageWithInject("translate", tab.id).catch(noop);
   } else if (info.menuItemId === "page-translate") {
-    sendMessage("page translate", tab.id).catch(noop);
+    sendTabMessageWithInject("page translate", tab.id).catch(noop);
   }
 });
 
@@ -807,16 +914,16 @@ chrome.commands.onCommand.addListener(async (command) => {
   if (!tab?.id) return;
   switch (command) {
     case "translate":
-      sendMessage("translate", tab.id).catch(noop);
+      sendTabMessageWithInject("translate", tab.id).catch(noop);
       break;
     case "page":
-      sendMessage("page translate", tab.id).catch(noop);
+      sendTabMessageWithInject("page translate", tab.id).catch(noop);
       break;
     case "pageSwitchMode":
-      sendMessage("page translate switch mode", tab.id).catch(noop);
+      sendTabMessageWithInject("page translate switch mode", tab.id).catch(noop);
       break;
     case "play":
-      sendMessage("play", tab.id).catch(noop);
+      sendTabMessageWithInject("play", tab.id).catch(noop);
       break;
   }
 });

@@ -2,12 +2,55 @@ import * as mod_62337 from "./webpageTranslateDom.js";
 import _A_97519 from "dompurify";
 import { a as i } from "../shared/constants/showType.js";
 const { sanitize: o } = _A_97519;
+
+const INVALID_ONLY_PUNCT_RE = /^[0-9\s.,\-_#:()[\]!•+~@$%^&*\n/`]+$/;
+const PLACEHOLDER_TOKEN_RE = /\{\{\s*\d+\s*\}\}/g;
+
+function isInlineMathNode(node) {
+  if (!(node instanceof Element)) return false;
+  const tag = node.tagName.toLowerCase();
+  if (tag !== "math" && tag !== "mjx-container") return false;
+  if (node.getAttribute("display") === "block" || node.getAttribute("display") === "true") {
+    return false;
+  }
+  return window.getComputedStyle(node).display !== "block";
+}
+
+function clonePlaceholderNode(node) {
+  const clone = node.cloneNode(true);
+  if (clone instanceof Element) {
+    clone.removeAttribute("id");
+    clone.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
+  }
+  return clone;
+}
+
+function collectInlineMathNodes(roots) {
+  const collected = [];
+  const visit = (node) => {
+    if (!(node instanceof Element)) return;
+    const tag = node.tagName.toLowerCase();
+    if (tag === "hcfy-result") return;
+    if (window.getComputedStyle(node).display === "none") return;
+    if (isInlineMathNode(node)) {
+      collected.push(node);
+      return;
+    }
+    for (const child of node.children) {
+      visit(child);
+    }
+  };
+  roots.forEach(visit);
+  return collected;
+}
+
 class a {
   inited = false;
   valid = true;
   isOnlyChild = false;
   destroyed = false;
   innerText = "";
+  placeholders = [];
   translating = false;
   translated = false;
   hasStreamOutput = false;
@@ -20,8 +63,15 @@ class a {
     ((this.rootNode = e),
       (this.sourceNodes = t),
       (this.translateFn = n),
+      (this.isInlineSpan = !!r?.isInlineSpan),
       (this.#e = new mod_62337.HT()),
       (this.#e.props.editable = null != r?.editable && r.editable),
+      (this.#e.props.containerDisplay =
+        null != r?.containerDisplay
+          ? r.containerDisplay
+          : e instanceof Element
+            ? window.getComputedStyle(e).display
+            : ""),
       (this.#e.props.onRetry = () => this.retry()),
       (function (e, t, n) {
         const s = n.nextSibling;
@@ -33,44 +83,81 @@ class a {
       this.inited ||
       (this.calcInnerText(),
       (this.valid = (function (e) {
-        const t = e.trim();
-        return !!t && !/^[0-9\s.\-_#:()!•+~@$%^&*\n/`]+$/.test(t);
+        const t = e.replace(PLACEHOLDER_TOKEN_RE, "").trim();
+        return !!t && !INVALID_ONLY_PUNCT_RE.test(t);
       })(this.innerText)),
       this.valid || this.destroy(),
       (this.inited = true));
   }
   calcInnerText() {
     const { sourceNodes: e, rootNode: t } = this;
+    const roots = this.isOnlyChild ? [t] : e;
+    const mathNodes = collectInlineMathNodes(roots);
+    this.placeholders = mathNodes.map(clonePlaceholderNode);
+
+    const replacements = [];
+    const swapMathWithPlaceholders = () => {
+      mathNodes.forEach((mathEl, idx) => {
+        const parent = mathEl.parentNode;
+        if (!parent) return;
+        const placeholderNode = document.createTextNode(`{{${idx}}}`);
+        parent.replaceChild(placeholderNode, mathEl);
+        replacements.push({ parent, mathEl, placeholderNode });
+      });
+    };
+    const restoreMathNodes = () => {
+      for (let idx = replacements.length - 1; idx >= 0; idx -= 1) {
+        const { parent, mathEl, placeholderNode } = replacements[idx];
+        if (placeholderNode.parentNode === parent) {
+          parent.replaceChild(mathEl, placeholderNode);
+        }
+      }
+    };
+
     let n;
     if (this.isOnlyChild) {
-      const e = this.showType;
-      (this.switchShowType(i.source),
-        (n = (function (e) {
-          if (e instanceof HTMLElement) return e.innerText;
-          const t = document.createElement("hcfy-result");
-          (Array.from(e.childNodes).forEach((e) => {
-            t.appendChild(e);
-          }),
-            e.appendChild(t));
-          const n = t.innerText;
-          return (
-            e.removeChild(t),
-            Array.from(t.childNodes).forEach((t) => {
-              e.appendChild(t);
-            }),
-            n
-          );
-        })(t).trim()),
-        this.switchShowType(e));
+      const prevShowType = this.showType;
+      this.switchShowType(i.source);
+      swapMathWithPlaceholders();
+      try {
+        n = (function (el) {
+          if (el instanceof HTMLElement) return el.innerText;
+          const wrapper = document.createElement("hcfy-result");
+          Array.from(el.childNodes).forEach((child) => {
+            wrapper.appendChild(child);
+          });
+          el.appendChild(wrapper);
+          const text = wrapper.innerText;
+          el.removeChild(wrapper);
+          Array.from(wrapper.childNodes).forEach((child) => {
+            el.appendChild(child);
+          });
+          return text;
+        })(t).trim();
+      } finally {
+        restoreMathNodes();
+      }
+      this.switchShowType(prevShowType);
     } else {
-      const t = document.createElement("span");
-      (e.forEach((e) => {
-        t.appendChild(e);
-      }),
-        document.documentElement.appendChild(t),
-        (n = t.innerText.trim()),
-        document.documentElement.removeChild(t),
-        this.showType !== i.result && this.appendSourceNodes());
+      const span = document.createElement("span");
+      span.setAttribute("data-hcfy-ignore", "1");
+      e.forEach((node) => {
+        span.appendChild(node);
+      });
+      this.sourceRemoved = true;
+      t.insertBefore(span, this.#e.container);
+      swapMathWithPlaceholders();
+      try {
+        n = span.innerText.trim();
+      } finally {
+        restoreMathNodes();
+        if (span.parentNode === t) {
+          t.removeChild(span);
+        }
+        if (this.showType !== i.result) {
+          this.appendSourceNodes();
+        }
+      }
     }
     this.innerText = n;
   }
@@ -80,7 +167,7 @@ class a {
     ((this.isOnlyChild = true),
       this.inited && this.calcInnerText(),
       e instanceof Element &&
-        ("span" === e.nodeName.toLowerCase() ||
+        (("span" === e.nodeName.toLowerCase() && this.isInlineSpan) ||
           (function (e, t, n = 3) {
             let s = e,
               r = 0;
@@ -128,6 +215,8 @@ class a {
     this.renderResult({
       value: chunkText,
       type: "text",
+      placeholders: this.placeholders.length ? this.placeholders : undefined,
+      isStreaming: true,
     });
   }
   async translate() {
@@ -137,7 +226,11 @@ class a {
     this.translating = true;
     this.hasStreamOutput = false;
     try {
-      e = await this.translateFn(this.innerText, (partial) => this.onStreamChunk(partial));
+      e = await this.translateFn(
+        this.innerText,
+        (partial) => this.onStreamChunk(partial),
+        this.rootNode
+      );
     } catch (e) {
       if (this.destroyed) return;
       this.translating = false;
@@ -181,6 +274,8 @@ class a {
       this.renderResult({
         value: e,
         type: "text",
+        placeholders: this.placeholders.length ? this.placeholders : undefined,
+        isStreaming: false,
       });
     }
   }
