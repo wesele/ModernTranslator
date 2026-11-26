@@ -1,10 +1,10 @@
 # 各大浏览器扩展商店上架清单与审核填报指南
 
-> 适用版本：无登翻译 (Modern Translator / short_name: ModernTrans) v1.0.0  
+> 适用版本：无登翻译 (Modern Translator / short_name: ModernTrans) v1.0.1  
 > 联系邮箱：`wh1018@gmail.com`  
 > 主页与源码：`https://github.com/wesele/ModernTranslator`  
 > 欧盟 DSA 身份声明：**Non-Trader**（非商业个人开源开发者）  
-> 打包命令：`npm run pack` -> 生成 `release/modern-translator-v1.0.0.zip`
+> 打包命令：`npm run pack` -> 生成 `release/modern-translator-v1.0.1.zip`
 
 ---
 
@@ -90,8 +90,8 @@
 ## 四、提审前最终操作步骤
 
 1. **推送最新代码与隐私政策**：将本次修改提交并 `git push` 到 `origin/main`，确保 GitHub Pages（`https://wesele.github.io/ModernTranslator/privacy.html`）同步为最新版隐私政策。
-2. **确认压缩包为最新**：执行 `npm run pack`，生成最新 `release/modern-translator-v1.0.0.zip`（本次已同步打包验证）。
+2. **确认压缩包为最新**：执行 `npm run pack`，生成最新 `release/modern-translator-v1.0.1.zip`（本次已同步打包验证）。
 3. **本地验收与截图**：打开 `chrome://extensions/`（和 `edge://extensions/`），将 `dist/` 加载为已解压扩展，验证图标、名称、划词翻译、全文翻译、设置页与朗读均正常工作，同时截取 `1280×800`（无透明通道）功能截图。
 4. **上传提审**：
-   - Chrome Web Store：上传 `release/modern-translator-v1.0.0.zip` + `store-assets/chrome-icon-128.png` + 截图 + 隐私政策 URL + `wh1018@gmail.com` + EU DSA `Non-Trader` + 上表英文权限说明。
-   - Microsoft Edge Add-ons：上传同一份 `release/modern-translator-v1.0.0.zip` + `store-assets/edge-icon-300.png` + 截图 + 隐私政策 URL。
+   - Chrome Web Store：上传 `release/modern-translator-v1.0.1.zip` + `store-assets/chrome-icon-128.png` + 截图 + 隐私政策 URL + `wh1018@gmail.com` + EU DSA `Non-Trader` + 上表英文权限说明。
+   - Microsoft Edge Add-ons：上传同一份 `release/modern-translator-v1.0.1.zip` + `store-assets/edge-icon-300.png` + 截图 + 隐私政策 URL。

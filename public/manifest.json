@@ -67,9 +67,9 @@
       "page": "settings.html"
    },
    "permissions": [ "contextMenus", "storage", "clipboardWrite", "offscreen", "declarativeNetRequestWithHostAccess", "scripting" ],
-   "version": "1.0.0",
+   "version": "1.0.1",
    "web_accessible_resources": [ {
       "matches": [ "<all_urls>" ],
-      "resources": [ "normalize.css", "blueprint.css", "blueprint-select.css", "lang-select.css", "google-engine.svg", "microsoft-engine.svg", "custom-llm.svg", "official-llm.svg", "logo.png", "logodark.png", "logowhite36.png" ]
+      "resources": [ "normalize.css", "blueprint.css", "blueprint-select.css", "lang-select.css", "google-engine.svg", "microsoft-engine.svg", "custom-llm.svg", "official-llm.svg", "logo.png", "logodark.png", "logowhite36.png", "icons/icon48.png" ]
    } ]
 }

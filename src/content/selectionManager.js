@@ -86,7 +86,69 @@ function C(e) {
   const D = document.createRange();
   return (D.setStart(r, F), D.setEnd(d, l), D);
 }
+function isEventInClassroomModal(e) {
+  if (!e || typeof e.composedPath !== "function") return false;
+  return e.composedPath().some((node) => node && node.id === "ndt-classroom-modal");
+}
+
+function isEventInClassroomBackdrop(e) {
+  if (!e || typeof e.composedPath !== "function") return false;
+  return e
+    .composedPath()
+    .some((node) => node && (node.id === "ndt-classroom-modal" || node.id === "ndt-classroom-backdrop"));
+}
+
+function getClassroomShadowSelection(fromClassroom = false) {
+  const host = document.getElementById("__hcfy__");
+  const shadowRoot = host?.shadowRoot;
+  if (!shadowRoot) return null;
+  const modal = shadowRoot.getElementById("ndt-classroom-modal");
+  if (!modal) return null;
+
+  const sel =
+    typeof shadowRoot.getSelection === "function"
+      ? shadowRoot.getSelection()
+      : fromClassroom
+        ? window.getSelection()
+        : null;
+  if (sel && sel.rangeCount > 0) {
+    const range = sel.getRangeAt(0);
+    const rawText = sel.toString();
+    const cleanedText = rawText ? rawText.trim().replace(r, "") : "";
+    if (
+      cleanedText &&
+      !range.collapsed &&
+      range.commonAncestorContainer &&
+      modal.contains(range.commonAncestorContainer)
+    ) {
+      return { text: cleanedText, range };
+    }
+  }
+  return null;
+}
+
 function m(e, u) {
+  const fromClassroom = isEventInClassroomModal(e);
+  const classroomSel = fromClassroom || !e ? getClassroomShadowSelection(fromClassroom) : null;
+  if (classroomSel) {
+    const classroomRange = classroomSel.range;
+    return {
+      text: classroomSel.text,
+      multiClick: !!u,
+      isTop: mod_65040.$,
+      event:
+        e && pick(e, ["altKey", "metaKey", "shiftKey", "ctrlKey", "clientX", "clientY", "target"]),
+      isInTextarea: false,
+      isInContentEditable: false,
+      rect: mod_65040.$
+        ? function () {
+            return classroomRange.getBoundingClientRect();
+          }
+        : classroomRange.getBoundingClientRect(),
+    };
+  }
+  if (fromClassroom) return;
+
   const t = window.getSelection();
   if (!t) return;
   const n = (function (e = window.getSelection()) {
@@ -216,7 +278,7 @@ class x extends _b_27429 {
       this.d?.("初始化完成"));
   }
   handleDown = (e) => {
-    if (!this.getElement().contains(e.target))
+    if (!this.getElement().contains(e.target) && !isEventInClassroomModal(e))
       return void this.d?.(
         "pointerdown 事件发生在不在监听范围内的元素上，忽略。",
         this.getElement,
@@ -378,7 +440,7 @@ class M {
       document.addEventListener(
         "pointerdown",
         (e) => {
-          (mod_65040.$ && "__hcfy__" === e.target.id) ||
+          (mod_65040.$ && "__hcfy__" === e.target.id && !isEventInClassroomBackdrop(e)) ||
             this.postMsgToTopmostFrame({
               type: "HCFY_SELECTION_EVENT_MOUSEDOWN",
               event: pick(e, ["target.id"]),

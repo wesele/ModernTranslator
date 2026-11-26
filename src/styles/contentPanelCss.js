@@ -1026,6 +1026,8 @@ export default `
   background-color: #070707;
   border-bottom: 1px solid #1f1f1f;
   flex-shrink: 0;
+  max-height: 112px;
+  overflow-y: auto;
 }
 
 #ndt-subtitle-panel .ndt-sub-track-checkbox {

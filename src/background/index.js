@@ -43,7 +43,16 @@ import {
   getTranslationCacheStats,
   clearTranslationCache,
 } from "./translationCache.js";
-import { fetchBilibiliSubtitles } from "../shared/bilibiliSubtitle.js";
+import { fetchBilibiliSubtitles, parseBilibiliVideoUrl } from "../shared/bilibiliSubtitle.js";
+import {
+  fetchYouTubeSubtitles,
+  fetchYouTubeSingleTrack,
+  parseYouTubeVideoUrl,
+} from "../shared/youtubeSubtitle.js";
+import {
+  extractClassroomVocabulary,
+  registerClassroomStreamHandler,
+} from "./languageClassroom.js";
 import { writeToClipboard, playWithAudio, playWithSpeech } from "../shared/domMedia.js";
 
 // Forward iframe selection messages between frames
@@ -419,6 +428,7 @@ function getTranslator(apiCode) {
 }
 
 registerLlmBatchStreamHandler();
+registerClassroomStreamHandler();
 
 watchStorage(pick(defaultOptions, ["googleRegion", "googleMirror"]), (changes) => {
   if (changes.googleRegion) {
@@ -593,7 +603,7 @@ const DEST_KEYS = {
 
 const optionsUrl = chrome.runtime.getURL("settings.html");
 
-onMessage((msg) => {
+onMessage((msg, ctx) => {
   switch (msg.action) {
     case "open options page":
       return msg.suffix
@@ -798,9 +808,43 @@ onMessage((msg) => {
     case "write to clipboard":
       return writeClipboardInHost(msg.text);
 
+    case "fetch video subtitles":
     case "fetch bilibili subtitles":
     case "fetch bilibili first subtitle":
-      return fetchBilibiliSubtitles({ pageUrl: msg.pageUrl });
+      return (async () => {
+        const pageUrl = msg.pageUrl || ctx?.sender?.tab?.url || "";
+        if (parseYouTubeVideoUrl(pageUrl)) {
+          return fetchYouTubeSubtitles({
+            pageUrl,
+            tabId: ctx?.sender?.tab?.id,
+            targetLanguage: msg.targetLanguage || "",
+            trackKey: msg.trackKey || "",
+            forceRefresh: Boolean(msg.forceRefresh),
+          });
+        }
+        if (parseBilibiliVideoUrl(pageUrl)) {
+          const res = await fetchBilibiliSubtitles({ pageUrl });
+          return { platform: "bilibili", ...res };
+        }
+        return { ok: false, platform: "other", reason: "NOT_SUPPORTED_VIDEO_SITE" };
+      })();
+
+    case "fetch video subtitle track":
+      return (async () => {
+        const pageUrl = msg.pageUrl || ctx?.sender?.tab?.url || "";
+        if (parseYouTubeVideoUrl(pageUrl)) {
+          return fetchYouTubeSingleTrack({
+            pageUrl,
+            tabId: ctx?.sender?.tab?.id,
+            trackKey: msg.trackKey || "",
+            subtitleUrl: msg.subtitleUrl || "",
+          });
+        }
+        return { ok: false, platform: "other", reason: "NOT_SUPPORTED_VIDEO_SITE" };
+      })();
+
+    case "extract classroom vocabulary":
+      return extractClassroomVocabulary(msg.data || msg);
   }
 });
 

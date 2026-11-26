@@ -61,7 +61,10 @@ import * as mod_94903 from "./ParagraphTranslator.js";
 import * as mod_62337 from "./webpageTranslateDom.js";
 import * as mod_69675 from "../shared/storage/watchStorage.js";
 import contentPanelCss from "../styles/contentPanelCss.js";
+import classroomCss from "../styles/classroomCss.js";
 import * as mod_42631 from "../components/ShadowContainer.jsx";
+import { LanguageClassroomModal } from "./LanguageClassroomModal.jsx";
+import { mountBilibiliClassroomButton } from "./bilibiliClassroomButton.js";
 import {
   isLlmService,
   MAX_LLM_BATCH_BYTES,
@@ -2616,6 +2619,12 @@ const cn = new (class {
   }
 })();
 function findBestVideoElement() {
+  const ytMain =
+    document.querySelector("#movie_player video.html5-main-video") ||
+    document.querySelector("ytd-watch-flexy #movie_player video") ||
+    document.querySelector("#shorts-player video.html5-main-video");
+  if (ytMain) return ytMain;
+
   const videos = Array.from(document.querySelectorAll("video"));
   if (videos.length === 0) return null;
   let best = videos[0];
@@ -2680,10 +2689,11 @@ function detectDomVideoSubtitles() {
   };
 }
 
-function SubtitleSidePanel({ open, state, onRefresh, onClose }) {
+function SubtitleSidePanel({ open, state, onRefresh, onLoadTrack, onClose }) {
   const { loading, data, error } = state || {};
   const tracks = Array.isArray(data?.tracks) ? data.tracks : [];
   const [selectedTrackKeys, setSelectedTrackKeys] = React.useState([]);
+  const [loadingTrackKeys, setLoadingTrackKeys] = React.useState(() => new Set());
   const [videoTime, setVideoTime] = React.useState(0);
   const [autoFollow, setAutoFollow] = React.useState(true);
 
@@ -2693,6 +2703,7 @@ function SubtitleSidePanel({ open, state, onRefresh, onClose }) {
   const lastProgrammaticTopRef = React.useRef(0);
   const userScrollingUntilRef = React.useRef(0);
   const loadedUrlRef = React.useRef("");
+  const lastVideoIdRef = React.useRef("");
 
   React.useEffect(() => {
     if (!open) return;
@@ -2700,9 +2711,13 @@ function SubtitleSidePanel({ open, state, onRefresh, onClose }) {
   }, [open, data]);
 
   React.useEffect(() => {
-    setSelectedTrackKeys(pickDefaultSelectedTrackKeys(tracks));
-    setAutoFollow(true);
-    prevActiveRef.current = -1;
+    const nextVideoId = data?.videoId || data?.bvid || "";
+    if (!data || nextVideoId !== lastVideoIdRef.current || selectedTrackKeys.length === 0) {
+      lastVideoIdRef.current = nextVideoId;
+      setSelectedTrackKeys(pickDefaultSelectedTrackKeys(tracks));
+      setAutoFollow(true);
+      prevActiveRef.current = -1;
+    }
   }, [data]);
 
   React.useEffect(() => {
@@ -2782,9 +2797,28 @@ function SubtitleSidePanel({ open, state, onRefresh, onClose }) {
   }, [open, autoFollow, activeIndex, rows, scrollActiveToFifthRow]);
 
   const handleToggleTrack = (trackKey) => {
+    const isCurrentlySelected = selectedTrackKeys.includes(trackKey);
     setSelectedTrackKeys((prev) =>
       prev.includes(trackKey) ? prev.filter((k) => k !== trackKey) : [...prev, trackKey]
     );
+    if (!isCurrentlySelected && onLoadTrack) {
+      const tr = tracks.find((t) => t.key === trackKey);
+      if (tr && (!Array.isArray(tr.cues) || tr.cues.length === 0) && (tr.subtitleUrl || tr.hasSubtitleUrl)) {
+        setLoadingTrackKeys((prev) => {
+          const next = new Set(prev);
+          next.add(trackKey);
+          return next;
+        });
+        Promise.resolve(onLoadTrack(tr)).finally(() => {
+          setLoadingTrackKeys((prev) => {
+            if (!prev.has(trackKey)) return prev;
+            const next = new Set(prev);
+            next.delete(trackKey);
+            return next;
+          });
+        });
+      }
+    }
   };
 
   const handleSeekToRow = (row) => {
@@ -2865,7 +2899,11 @@ function SubtitleSidePanel({ open, state, onRefresh, onClose }) {
                   checked={checked}
                   onChange={() => handleToggleTrack(track.key)}
                 />
-                <span>{track.lanDoc || track.lan || "字幕"}</span>
+                <span>
+                  {loadingTrackKeys.has(track.key)
+                    ? `${track.lanDoc || track.lan || "字幕"}...`
+                    : track.lanDoc || track.lan || "字幕"}
+                </span>
               </label>
             );
           })}
@@ -2877,12 +2915,18 @@ function SubtitleSidePanel({ open, state, onRefresh, onClose }) {
         {!loading && error && <div className="ndt-sub-error">{error}</div>}
         {!loading && !error && data?.ok && (
           <>
-            {data.partial && data.needLoginSubtitle ? (
+            {data.partial && data.rateLimited ? (
+              <div className="ndt-sub-hint">
+                YouTube 字幕接口当前触发了频率限制（HTTP 429），请等待片刻后点击右上角刷新重试。
+              </div>
+            ) : data.partial && data.needLoginSubtitle ? (
               <div className="ndt-sub-hint">
                 已探测到 {tracks.length} 条字幕轨，但当前 B 站未登录（need_login_subtitle=true），B 站接口未返回字幕正文 URL；登录后点击刷新即可显示多语言字幕流。
               </div>
             ) : selectedTrackKeys.length === 0 ? (
               <div className="ndt-sub-hint">请在顶部勾选至少一条字幕以显示字幕流。</div>
+            ) : loadingTrackKeys.size > 0 && rows.length === 0 ? (
+              <div className="ndt-sub-hint">正在加载所选字幕轨道...</div>
             ) : rows.length === 0 ? (
               <div className="ndt-sub-hint">所选字幕轨道内暂无字幕内容。</div>
             ) : (
@@ -2954,11 +2998,20 @@ function SubtitleSidePanel({ open, state, onRefresh, onClose }) {
         )}
         {!loading && !error && data && !data.ok && (
           <div className="ndt-sub-hint">
-            {data.reason === "NOT_BILIBILI" && "当前页面不是 B 站视频页，且未检测到 HTML5 视频字幕轨。"}
-            {data.reason === "NOT_BILIBILI_VIDEO" && "当前在 B 站页面，但未识别到具体视频 BV/AV 号，请打开视频播放页后重试。"}
+            {(data.reason === "NOT_BILIBILI" || data.reason === "NOT_SUPPORTED_VIDEO_SITE") &&
+              "当前页面不是 B 站或 YouTube 视频页，且未检测到 HTML5 视频字幕轨。"}
+            {data.reason === "NOT_BILIBILI_VIDEO" &&
+              "当前在 B 站页面，但未识别到具体视频 BV/AV 号，请打开视频播放页后重试。"}
+            {data.reason === "NOT_YOUTUBE_VIDEO" &&
+              "当前在 YouTube 页面，但未识别到具体视频播放页，请打开视频后重试。"}
             {data.reason === "NEED_LOGIN" &&
               "当前 B 站未登录，播放器接口返回 need_login_subtitle=true，请先登录 B 站后再试。"}
-            {data.reason === "NO_SUBTITLE" && "当前 B 站视频未检测到 CC 字幕。"}
+            {data.reason === "RATE_LIMITED" &&
+              "YouTube 字幕接口当前触发了频率限制（HTTP 429），请等待片刻后点击刷新重试。"}
+            {data.reason === "NO_SUBTITLE" &&
+              (data.platform === "youtube"
+                ? "当前 YouTube 视频未检测到可用字幕。"
+                : "当前 B 站视频未检测到 CC 字幕。")}
           </div>
         )}
       </div>
@@ -3010,6 +3063,8 @@ function Comp_Dn(e) {
       data: null,
       error: "",
     }),
+    [classroomOpen, setClassroomOpen] = React.useState(false),
+    classroomOpenRef = React.useRef(false),
     [$, D] = React.useState(undefined),
     B = (() => {
       const e = window.location.href;
@@ -3077,15 +3132,26 @@ function Comp_Dn(e) {
   const ee = React.useCallback(() => {
     (E(null), Z());
   }, []);
-  const loadSubtitles = React.useCallback(async () => {
+  const loadSubtitles = React.useCallback(async (forceRefresh = false) => {
     setSubtitleOpen(true);
     setSubtitleState({ loading: true, data: null, error: "" });
     try {
-      const res = await mod_67116._({
-        action: "fetch bilibili subtitles",
-        pageUrl: window.location.href,
+      const destCfg = await chrome.storage.local.get({
+        pageTrsDest: mod_16224.g2.pageTrsDest,
+        destination: mod_16224.g2.destination,
       });
-      if (res && !res.ok && res.reason === "NOT_BILIBILI") {
+      const targetLanguage = destCfg?.pageTrsDest?.[0] || destCfg?.destination || "中文(简体)";
+      const res = await mod_67116._({
+        action: "fetch video subtitles",
+        pageUrl: window.location.href,
+        targetLanguage,
+        forceRefresh: Boolean(forceRefresh),
+      });
+      if (
+        res &&
+        !res.ok &&
+        (res.reason === "NOT_BILIBILI" || res.reason === "NOT_SUPPORTED_VIDEO_SITE")
+      ) {
         const domRes = detectDomVideoSubtitles();
         if (domRes) {
           setSubtitleState({ loading: false, data: domRes, error: "" });
@@ -3101,6 +3167,51 @@ function Comp_Dn(e) {
       });
     }
   }, []);
+  const refreshSubtitles = React.useCallback(() => {
+    loadSubtitles(true);
+  }, [loadSubtitles]);
+  const loadSubtitleTrack = React.useCallback(async (track) => {
+    if (!track) return;
+    try {
+      const res = await mod_67116._({
+        action: "fetch video subtitle track",
+        pageUrl: window.location.href,
+        trackKey: track.key,
+        subtitleUrl: track.subtitleUrl || "",
+      });
+      if (res?.ok && res.track?.cues?.length > 0) {
+        setSubtitleState((prev) => {
+          if (!prev.data || !Array.isArray(prev.data.tracks)) return prev;
+          const nextTracks = prev.data.tracks.map((tr) =>
+            tr.key === track.key ? { ...tr, ...res.track } : tr
+          );
+          return {
+            ...prev,
+            data: {
+              ...prev.data,
+              partial: false,
+              rateLimited: false,
+              tracks: nextTracks,
+            },
+          };
+        });
+      }
+    } catch {
+      // ignore track load error
+    }
+  }, []);
+  classroomOpenRef.current = classroomOpen;
+  React.useEffect(() => {
+    return mountBilibiliClassroomButton(
+      () => {
+        setClassroomOpen(true);
+      },
+      {
+        isModalOpen: () => classroomOpenRef.current,
+      }
+    );
+  }, []);
+
   (React.useEffect(
     () =>
       mod_67116.x((e) => {
@@ -3112,6 +3223,9 @@ function Comp_Dn(e) {
             break;
           case "open subtitle panel":
             loadSubtitles();
+            return Promise.resolve({ open: true });
+          case "open language classroom":
+            setClassroomOpen(true);
             return Promise.resolve({ open: true });
           case "play":
             G.current?.play();
@@ -3225,8 +3339,22 @@ function Comp_Dn(e) {
       <SubtitleSidePanel
         open={subtitleOpen}
         state={subtitleState}
-        onRefresh={loadSubtitles}
+        onRefresh={refreshSubtitles}
+        onLoadTrack={loadSubtitleTrack}
         onClose={() => setSubtitleOpen(false)}
+      />
+      <LanguageClassroomModal
+        open={classroomOpen}
+        hasPopupOpen={Boolean(C || S)}
+        onDismissPopup={() => {
+          E(null);
+          _(false);
+        }}
+        onClose={() => {
+          setClassroomOpen(false);
+          E(null);
+          if (!f) _(false);
+        }}
       />
     </div>
   );
@@ -3237,7 +3365,7 @@ function fn() {
       id="__hcfy__"
       stylesheetURLs={["blueprint-select.css", "lang-select.css"]}
       cssText={
-        ((e = contentPanelCss),
+        ((e = `${contentPanelCss}\n${classroomCss}`),
         e.replace(/url\((["']?)(.*?)\1\)/g, function (e, t, n) {
           return n.startsWith("data:") ||
             n.startsWith("chrome-extension:") ||

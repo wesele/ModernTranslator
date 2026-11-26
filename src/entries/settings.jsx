@@ -32,6 +32,13 @@ import {
 } from "../shared/officialModelMetrics.js";
 import { UiLanguageSelect } from "../components/UiLanguageSelect.jsx";
 import { UI_LOCALE_TO_BCP47, useI18n } from "../shared/i18n/index.js";
+import {
+  exportWordbookToTsv,
+  mapSubtitleLangToTtsSource,
+  useWordbook,
+} from "../shared/wordbook.js";
+
+const WORDBOOK_TAB_ID = "__wordbook__";
 
 if (typeof document !== "undefined") {
   new InteractionModeEngine(document.documentElement, Classes.FOCUS_DISABLED).start();
@@ -1101,12 +1108,16 @@ function SettingsApp() {
   }, [activeId, officialBaseUrl, officialKey, officialModel]);
 
   const activeCustomService = customServices.find((item) => item.id === activeId) || null;
+  const wordbook = useWordbook();
+  const [wbSearch, setWbSearch] = React.useState("");
+  const [wbFilter, setWbFilter] = React.useState("all");
 
   React.useEffect(() => {
     if (
       activeId !== OFFICIAL_LLM_ID &&
       activeId !== ServiceId.Microsoft &&
       activeId !== ServiceId.Google &&
+      activeId !== WORDBOOK_TAB_ID &&
       !activeCustomService
     ) {
       setActiveId(OFFICIAL_LLM_ID);
@@ -1796,6 +1807,199 @@ function SettingsApp() {
       );
     }
 
+    if (activeId === WORDBOOK_TAB_ID) {
+      const q = wbSearch.trim().toLowerCase();
+      const filtered = wordbook.items.filter((item) => {
+        if (wbFilter === "learning" && item.mastered) return false;
+        if (wbFilter === "mastered" && !item.mastered) return false;
+        if (!q) return true;
+        return (
+          String(item.term || "").toLowerCase().includes(q) ||
+          String(item.translation || "").toLowerCase().includes(q) ||
+          String(item.sourceTitle || "").toLowerCase().includes(q) ||
+          String(item.languageLabel || "").toLowerCase().includes(q)
+        );
+      });
+
+      const handleExportTsv = () => {
+        if (wordbook.items.length === 0) return;
+        const tsv = exportWordbookToTsv(wordbook.items);
+        const blob = new Blob([tsv], { type: "text/tab-separated-values;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `language-classroom-wordbook-${new Date().toISOString().slice(0, 10)}.tsv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      };
+
+      const handleSpeakItem = (item) => {
+        messaging
+          ._({
+            action: "audio",
+            url: {
+              apiId: "GoogleWeb",
+              source: mapSubtitleLangToTtsSource(item.language, item.languageLabel),
+              text: item.term,
+            },
+          })
+          .catch(() => {});
+      };
+
+      return (
+        <>
+          <div className="inspector-header">
+            <div className="inspector-title-wrap">
+              <div className="inspector-icon wb-inspector-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path
+                    d="M10 2.4l2.3 4.65 5.13.75-3.71 3.62.88 5.11L10 14.12l-4.6 2.41.88-5.11-3.71-3.62 5.13-.75L10 2.4z"
+                    fill="#f97316"
+                    stroke="#f97316"
+                    strokeWidth="1.2"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
+              <div>
+                <div className="inspector-heading-row">
+                  <h1 className="inspector-heading">语言课堂 · 单词本</h1>
+                  <span className="inspector-badge is-ready">{wordbook.items.length} 词条</span>
+                </div>
+                <p className="inspector-subtitle">
+                  收录自 B 站 / YouTube「语言课堂」的难点单词与短语，支持搜索复习、标记掌握与导出 Anki TSV
+                </p>
+              </div>
+            </div>
+
+            <div className="inspector-header-actions">
+              <button
+                type="button"
+                className="ndt-btn"
+                disabled={wordbook.items.length === 0}
+                onClick={handleExportTsv}
+              >
+                导出 TSV (Anki)
+              </button>
+            </div>
+          </div>
+
+          <div className="wb-settings-toolbar">
+            <input
+              type="text"
+              className="ndt-input wb-settings-search"
+              placeholder="搜索单词、短语、释义或来源视频..."
+              value={wbSearch}
+              onChange={(e) => setWbSearch(e.target.value)}
+            />
+            <div className="theme-segmented">
+              <button
+                type="button"
+                className={`theme-segmented-btn ${wbFilter === "all" ? "is-active" : ""}`}
+                onClick={() => setWbFilter("all")}
+              >
+                全部 ({wordbook.items.length})
+              </button>
+              <button
+                type="button"
+                className={`theme-segmented-btn ${wbFilter === "learning" ? "is-active" : ""}`}
+                onClick={() => setWbFilter("learning")}
+              >
+                学习中 ({wordbook.items.filter((i) => !i.mastered).length})
+              </button>
+              <button
+                type="button"
+                className={`theme-segmented-btn ${wbFilter === "mastered" ? "is-active" : ""}`}
+                onClick={() => setWbFilter("mastered")}
+              >
+                已掌握 ({wordbook.items.filter((i) => i.mastered).length})
+              </button>
+            </div>
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="wb-settings-empty">
+              {wordbook.items.length === 0
+                ? "单词本还是空的。打开任意带字幕的 B 站视频，点击播放器右下角插件图标进入「语言课堂」即可预习并收藏生词。"
+                : "没有找到匹配的词条。"}
+            </div>
+          ) : (
+            <div className="wb-settings-list">
+              {filtered.map((item) => (
+                <div
+                  key={item.id}
+                  className={`wb-settings-card ${item.mastered ? "is-mastered" : ""}`}
+                >
+                  <div className="wb-settings-card-head">
+                    <div className="wb-settings-term-row">
+                      <span className="wb-settings-term">{item.term}</span>
+                      {item.phonetic && <span className="wb-settings-chip">{item.phonetic}</span>}
+                      {item.pos && <span className="wb-settings-chip is-pos">{item.pos}</span>}
+                      {item.level && <span className="wb-settings-chip is-lvl">{item.level}</span>}
+                      {item.languageLabel && (
+                        <span className="wb-settings-chip">{item.languageLabel}</span>
+                      )}
+                    </div>
+                    <div className="wb-settings-actions">
+                      <button
+                        type="button"
+                        className="ndt-btn"
+                        title="朗读"
+                        onClick={() => handleSpeakItem(item)}
+                      >
+                        <Icon icon="volume-up" size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        className={`ndt-btn ${item.mastered ? "is-primary" : ""}`}
+                        onClick={() => wordbook.toggleMastered(item.id)}
+                      >
+                        {item.mastered ? "已掌握" : "标记掌握"}
+                      </button>
+                      <button
+                        type="button"
+                        className="ndt-btn"
+                        title="移出单词本"
+                        onClick={() => wordbook.removeItem(item.id)}
+                      >
+                        <Icon icon="trash" size={12} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="wb-settings-trans">{item.translation}</div>
+                  {item.explanation && (
+                    <div className="wb-settings-exp">{item.explanation}</div>
+                  )}
+                  {item.examples?.[0]?.sentence && (
+                    <div className="wb-settings-ex">
+                      <div>{item.examples[0].sentence}</div>
+                      {item.examples[0].translation && (
+                        <div className="wb-settings-ex-zh">{item.examples[0].translation}</div>
+                      )}
+                    </div>
+                  )}
+                  {item.sourceTitle && (
+                    <div className="wb-settings-source">
+                      来源视频：
+                      {item.sourceUrl ? (
+                        <a href={item.sourceUrl} target="_blank" rel="noreferrer">
+                          {item.sourceTitle}
+                        </a>
+                      ) : (
+                        item.sourceTitle
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      );
+    }
+
     return null;
   };
 
@@ -1945,6 +2149,39 @@ function SettingsApp() {
               </div>
             </div>
 
+            <div className="rail-section">
+              <div className="rail-section-header">
+                <span className="rail-section-label">语言课堂</span>
+              </div>
+              <div className="rail-list">
+                <button
+                  type="button"
+                  className={`rail-item ${activeId === WORDBOOK_TAB_ID ? "is-selected" : ""}`}
+                  onClick={() => setActiveId(WORDBOOK_TAB_ID)}
+                >
+                  <span className="rail-item-icon">
+                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                      <path
+                        d="M10 2.4l2.3 4.65 5.13.75-3.71 3.62.88 5.11L10 14.12l-4.6 2.41.88-5.11-3.71-3.62 5.13-.75L10 2.4z"
+                        fill="#f97316"
+                        stroke="#f97316"
+                        strokeWidth="1.2"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
+                  <span className="rail-item-meta">
+                    <span className="rail-item-title-row">
+                      <span className="rail-item-title">我的单词本</span>
+                    </span>
+                    <span className="rail-item-sub">
+                      已收藏 {wordbook.items.length} 个词条
+                    </span>
+                  </span>
+                </button>
+              </div>
+            </div>
+
             <div className="rail-footer">
               <button
                 type="button"
@@ -1959,7 +2196,7 @@ function SettingsApp() {
 
           <main className="service-inspector">
             {renderInspector()}
-            {activeId && (
+            {activeId && activeId !== WORDBOOK_TAB_ID && (
               <ServiceCacheBar
                 count={cacheCounts[activeId] ?? 0}
                 loading={cacheLoading}

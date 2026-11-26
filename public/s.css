@@ -1733,3 +1733,134 @@ body.bp6-dark .model-health-bar.is-empty {
     border-top: 1px solid var(--ndt-border-subtle);
   }
 }
+
+/* Wordbook Inspector in Settings */
+.wb-settings-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.wb-settings-search {
+  flex: 1;
+  min-width: 200px;
+  max-width: 340px;
+}
+
+.wb-settings-empty {
+  padding: 40px 20px;
+  text-align: center;
+  border-radius: 10px;
+  border: 1px dashed var(--ndt-border);
+  background-color: var(--ndt-bg-surface);
+  color: var(--ndt-text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.wb-settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wb-settings-card {
+  padding: 13px 15px;
+  border-radius: 10px;
+  border: 1px solid var(--ndt-border);
+  background-color: var(--ndt-bg-card);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wb-settings-card.is-mastered {
+  opacity: 0.72;
+  background-color: var(--ndt-bg-surface);
+}
+
+.wb-settings-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wb-settings-term-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.wb-settings-term {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--ndt-text-primary);
+}
+
+.wb-settings-chip {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background-color: var(--ndt-bg-pill);
+  color: var(--ndt-text-secondary);
+  font-family: var(--ndt-font-mono);
+}
+
+.wb-settings-chip.is-pos {
+  background-color: var(--ndt-brand-blue-bg);
+  color: var(--ndt-brand-blue);
+}
+
+.wb-settings-chip.is-lvl {
+  background-color: var(--ndt-warn-bg);
+  color: var(--ndt-warn-fg);
+}
+
+.wb-settings-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.wb-settings-trans {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ndt-text-primary);
+}
+
+.wb-settings-exp {
+  font-size: 12.5px;
+  color: var(--ndt-text-secondary);
+}
+
+.wb-settings-ex {
+  font-size: 12.5px;
+  color: var(--ndt-text-primary);
+  padding-top: 6px;
+  border-top: 1px dashed var(--ndt-border-subtle);
+}
+
+.wb-settings-ex-zh {
+  color: var(--ndt-text-secondary);
+  margin-top: 2px;
+}
+
+.wb-settings-source {
+  font-size: 11.5px;
+  color: var(--ndt-text-muted);
+}
+
+.wb-settings-source a {
+  color: var(--ndt-brand-blue);
+  text-decoration: none;
+}
+
+.wb-settings-source a:hover {
+  text-decoration: underline;
+}
