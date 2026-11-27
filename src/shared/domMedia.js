@@ -204,7 +204,7 @@ export function playWithSpeech(text, options) {
             (isChrome ? " " + domMediaT("error.ttsChromeNetwork", { lang: langSuffix }, uiLocale) : "")
         )
       );
-    }, 1000);
+    }, 2500);
 
     utter.addEventListener("start", () => {
       clearTimeout(timer);
@@ -219,8 +219,12 @@ export function playWithSpeech(text, options) {
       if (!utter.lang) utter.lang = systemVoiceLang;
       if (voiceName) {
         try {
-          const { voicesGroup } = await getVoicesInfo();
-          const matched = voicesGroup[systemVoiceLang]?.find((v) => v.name === voiceName);
+          const { voicesGroup, singleVoiceMap } = await getVoicesInfo();
+          const matched =
+            voicesGroup[systemVoiceLang]?.find((v) => v.name === voiceName) ||
+            (singleVoiceMap[systemVoiceLang]?.name === voiceName
+              ? singleVoiceMap[systemVoiceLang]
+              : null);
           if (matched) utter.voice = matched;
         } catch (err) {
           console.error("查找系统语音朗读者失败：", err);
@@ -246,6 +250,27 @@ export function playWithSpeech(text, options) {
           if (matched) utter.voice = matched;
         } catch (err) {
           console.error("选择系统语音朗读者失败：", err);
+        }
+      } else {
+        try {
+          const allVoices = speechSynthesis.getVoices() || [];
+          const normTarget = String(systemVoiceLang).toLowerCase().replace(/_/g, "-");
+          const basePrefix = normTarget.split("-")[0];
+          const exact = allVoices.find(
+            (v) => String(v.lang || "").toLowerCase().replace(/_/g, "-") === normTarget
+          );
+          const prefixMatch =
+            exact ||
+            allVoices.find((v) => {
+              const vl = String(v.lang || "").toLowerCase().replace(/_/g, "-");
+              return vl === basePrefix || vl.startsWith(`${basePrefix}-`);
+            });
+          if (prefixMatch) {
+            utter.voice = prefixMatch;
+            utter.lang = prefixMatch.lang;
+          }
+        } catch {
+          // ignore voice lookup failure
         }
       }
     }

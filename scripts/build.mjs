@@ -116,6 +116,9 @@ function createBuildOptions(target, outDir) {
     minify: !isWatch,
     sourcemap: isWatch ? "inline" : false,
     logLevel: "info",
+    loader: {
+      ".css": "text",
+    },
     plugins: [stubUnusedIconLoadersPlugin, patchLodashRootForCspPlugin],
     define: {
       "process.env.NODE_ENV": JSON.stringify(isWatch ? "development" : "production"),

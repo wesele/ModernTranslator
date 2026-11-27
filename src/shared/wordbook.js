@@ -1,12 +1,15 @@
 import * as React from "react";
+import { normalizeTextForMatch } from "./textScript.js";
 
 export const WORDBOOK_STORAGE_KEY = "ndtVocabularyBook";
 
 export function normalizeTermKey(term, language = "") {
-  const cleanTerm = String(term || "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
+  const cleanTerm =
+    normalizeTextForMatch(term) ||
+    String(term || "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .toLowerCase();
   const cleanLang = String(language || "")
     .trim()
     .toLowerCase();
@@ -14,7 +17,7 @@ export function normalizeTermKey(term, language = "") {
 }
 
 export function mapSubtitleLangToTtsSource(lan = "", lanDoc = "") {
-  const raw = `${lan} ${lanDoc}`.toLowerCase();
+  const raw = `${lan} ${lanDoc}`.toLowerCase().replace(/_/g, "-");
   if (/\b(es|spa)\b|西班牙|español|spanish/.test(raw)) return "西班牙语";
   if (/\b(en|eng)\b|英语|英文|english/.test(raw)) return "英语";
   if (/\b(ja|jp|jpn)\b|日语|日文|日本語|japanese/.test(raw)) return "日语";
@@ -25,7 +28,7 @@ export function mapSubtitleLangToTtsSource(lan = "", lanDoc = "") {
   if (/\b(pt|por)\b|葡萄牙|português|portuguese/.test(raw)) return "葡萄牙语";
   if (/\b(ru|rus)\b|俄语|俄文|русский|russian/.test(raw)) return "俄语";
   if (/\b(nl|nld|dut)\b|荷兰|nederlands|dutch/.test(raw)) return "荷兰语";
-  if (/\b(ar|ara)\b|阿拉伯|arabic/.test(raw)) return "阿拉伯语";
+  if (/\b(ar|ara)\b|阿拉伯|arabic|العربية|عربي|عربية/.test(raw)) return "阿拉伯语";
   if (/\b(th|tha)\b|泰语|thai/.test(raw)) return "泰语";
   if (/\b(tr|tur)\b|土耳其|turkish/.test(raw)) return "土耳其语";
   if (/\b(pl|pol)\b|波兰|polish/.test(raw)) return "波兰语";
@@ -33,6 +36,7 @@ export function mapSubtitleLangToTtsSource(lan = "", lanDoc = "") {
   if (/\b(id|ind)\b|印尼|indonesian/.test(raw)) return "印尼语";
   if (/\b(hi|hin)\b|印地|hindi/.test(raw)) return "印地语";
   if (/\b(el|ell|gre)\b|希腊|greek/.test(raw)) return "希腊语";
+  if (/\b(he|heb|iw)\b|希伯来|hebrew|עברית/.test(raw)) return "希伯来语";
   if (/\b(zh|chi|zho)\b|中文|汉语|国语|普通话|繁體|简体|chinese/.test(raw)) {
     return /繁|tw|hk|hant/.test(raw) ? "中文(繁体)" : "中文(简体)";
   }
@@ -261,7 +265,8 @@ export function useWordbook() {
   const keySet = React.useMemo(() => {
     const set = new Set();
     for (const item of items) {
-      set.add(item.key || normalizeTermKey(item.term, item.language));
+      if (item.key) set.add(item.key);
+      set.add(normalizeTermKey(item.term, item.language));
     }
     return set;
   }, [items]);

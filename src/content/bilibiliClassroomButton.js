@@ -7,6 +7,7 @@ import {
   computeCueSeekTime,
 } from "../shared/subtitleTimeline.js";
 import { pickRecommendedStudyTrack } from "../shared/wordbook.js";
+import { isolateBidiInline } from "../shared/textScript.js";
 import { g2 as defaultOptions } from "../shared/constants/defaults.js";
 import * as messaging from "../shared/messaging/index.js";
 
@@ -609,9 +610,14 @@ async function resolveTargetLanguage() {
 
 export function mountVideoClassroomButton(onOpenClassroom, options = {}) {
   const host = window.location.hostname.toLowerCase();
-  const isBiliHost = host === "bilibili.com" || host.endsWith(".bilibili.com");
-  const isYtHost = host === "youtube.com" || host.endsWith(".youtube.com");
+  const bilibiliEnabled = options?.bilibiliEnabled !== false;
+  const youtubeEnabled = options?.youtubeEnabled !== false;
+  const isBiliHost =
+    bilibiliEnabled && (host === "bilibili.com" || host.endsWith(".bilibili.com"));
+  const isYtHost =
+    youtubeEnabled && (host === "youtube.com" || host.endsWith(".youtube.com"));
   if (!isBiliHost && !isYtHost) {
+    removeInjectedControls();
     return () => {};
   }
 
@@ -698,7 +704,7 @@ export function mountVideoClassroomButton(onOpenClassroom, options = {}) {
       uiRefs.prevBtn.classList.remove("is-unavailable");
       uiRefs.nextBtn.classList.remove("is-unavailable");
 
-      const trackPrefix = trackLabel ? `${trackLabel} · ` : "";
+      const trackPrefix = trackLabel ? `${isolateBidiInline(trackLabel)} · ` : "";
       uiRefs.counterTip.textContent =
         displayCurrent > 0
           ? `${trackPrefix}第 ${displayCurrent}/${total} 句 · 点击重听本句`

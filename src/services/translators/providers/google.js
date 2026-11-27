@@ -376,7 +376,16 @@ class R extends mod_34047.c {
       throw new mod_29842.Fw(`${this.service.name}不支持朗读${t}。`, {
         type: mod_29842.VC.UNSUPPORTED_LANGUAGE,
       });
-    return `https://translate.googleapis.com/translate_tts?client=gtx&tl=${n}&ie=UTF-8&q=${encodeURIComponent(e)}`;
+    let text = String(e || "")
+      .replace(/[\u200E\u200F\u061C\u202A-\u202E\u2066-\u2069]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text.length > 195) {
+      const cut = text.slice(0, 195);
+      const lastSpace = cut.lastIndexOf(" ");
+      text = (lastSpace > 80 ? cut.slice(0, lastSpace) : cut).trim();
+    }
+    return `${p(this.mirror)}/translate_tts?client=gtx&tl=${n}&ie=UTF-8&q=${encodeURIComponent(text)}`;
   }
 }
 const googleTranslator = new R();

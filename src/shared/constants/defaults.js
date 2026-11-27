@@ -94,6 +94,8 @@ const defaultOptions = {
   officialLLMStreamEnabled: true,
   officialLLMMaxConcurrency: DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY,
   customOpenAIServices: [],
+  bilibiliVideoIntegration: true,
+  youtubeVideoIntegration: true,
 };
 
 const secondaryOptions = {

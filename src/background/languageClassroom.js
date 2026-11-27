@@ -13,6 +13,7 @@ import { extractApiErrorMessage } from "../shared/llmErrorUtils.js";
 import { getServiceDisplayName, t } from "../shared/i18n/index.js";
 import { mapSubtitleLangToTtsSource } from "../shared/wordbook.js";
 import { formatSubtitleTime } from "../shared/subtitleTimeline.js";
+import { hasArabicScript, normalizeTextForMatch } from "../shared/textScript.js";
 import {
   cleanSubtitleCues,
   computeSectionVocabTarget,
@@ -54,6 +55,14 @@ function buildBatchPrompt({
     excludeTerms.length > 0
       ? `6. 以下词条在本小节前一批中已提取，请勿重复挑选：${excludeTerms.slice(0, 40).join("、")}\n`
       : "";
+  const isArabicTrack =
+    hasArabicScript(transcript) ||
+    /(?:^|[-_\s])(ar|ara)(?:$|[-_\s])|阿拉伯|arabic|العربية|عربي/i.test(
+      `${trackLang || ""} ${trackLabel || ""}`
+    );
+  const arabicNote = isArabicTrack
+    ? `\n- 阿拉伯语特别说明：term 可保留完整标音（Tashkeel/Harakat）便于学习发音，并在 phonetic 中提供拉丁转写或 IPA 读音；surfaceForm 与 videoQuote 请尽量直接摘录下方字幕原样拼写（不要改写词形）；detectedLanguage 请填写「阿拉伯语」。`
+    : "";
 
   return `你是一位经验丰富的外语教学专家。用户即将在 ${platformName} 观看一部外语学习视频，希望在观看前通过「语言课堂」提前预习视频字幕中最难的词汇和短语。
 
@@ -69,14 +78,14 @@ ${sectionLine}字幕轨道：${trackLabel || trackLang || "未知语言"}
 5. 严格只输出合法的 JSON 对象，不要输出任何额外说明文字或 Markdown 注释。
 ${excludeLine}JSON 结构如下：
 {
-  "detectedLanguage": "字幕语言名称（如 法语 / 西班牙语 / 英语 / 日语 等）",
+  "detectedLanguage": "字幕语言名称（如 阿拉伯语 / 法语 / 西班牙语 / 英语 / 日语 等）",
   "summary": "${needSummary ? `用${targetLanguage || "中文(简体)"}一句话概括本段主题与词汇难度特点` : ""}",
   "items": [
     {
       "term": "单词原型或标准短语表达",
       "surfaceForm": "字幕中实际出现的形态（如动词变位或原样，没有变化可与 term 相同）",
       "type": "word 或 phrase",
-      "phonetic": "国际音标、假名读音或拼音（不适用可留空字符串）",
+      "phonetic": "国际音标、拉丁转写读音、假名读音或拼音（不适用可留空字符串）",
       "pos": "词性简写（如 v. / n. / adj. / adv. / phrase / idiom）",
       "level": "难度等级标签（如 B2 / C1 / C2 / N1 / 高级）",
       "difficulty": 4,
@@ -101,7 +110,7 @@ ${excludeLine}JSON 结构如下：
 注意：
 - difficulty 取值 1-5 的整数（4=较难，5=高难）。
 - 每个词条提供 1-2 条高质量例句，例句简洁实用。
-- 必须确保 JSON 语法完全合法（字符串内双引号正确转义）。
+- 必须确保 JSON 语法完全合法（字符串内双引号正确转义）。${arabicNote}
 
 以下是本段字幕内容：
 ${transcript}`;
@@ -238,14 +247,25 @@ function findMatchingCueWithIndex(cues, item) {
     if (idx >= 0) return { cue: cues[idx], index: idx };
   }
 
-  const fallbackWords = String(item?.surfaceForm || item?.term || "")
-    .toLowerCase()
-    .split(/[\s,.;:!?'"()]+/)
-    .filter((w) => w.length >= 4)
+  // Normalized pass: tolerates Arabic harakat/tashkeel, tatweel, Alif/Ya/Ta-Marbuta variants & Arabic punctuation
+  const normalizedCues = cues.map((c) => normalizeTextForMatch(c.content || ""));
+  for (const needle of candidates) {
+    const normNeedle = normalizeTextForMatch(needle);
+    if (normNeedle.length < 2) continue;
+    const idx = normalizedCues.findIndex((nc) => nc.includes(normNeedle));
+    if (idx >= 0) return { cue: cues[idx], index: idx };
+  }
+
+  const fallbackSource = normalizeTextForMatch(
+    item?.surfaceForm || item?.term || item?.videoQuote || ""
+  );
+  const fallbackWords = fallbackSource
+    .split(/[\s,.;:!?'"()،؛؟«»\-—–/\\[\]{}]+/)
+    .filter((w) => (hasArabicScript(w) ? w.length >= 3 : w.length >= 4))
     .sort((a, b) => b.length - a.length);
 
   for (const word of fallbackWords) {
-    const idx = cues.findIndex((c) => String(c.content || "").toLowerCase().includes(word));
+    const idx = normalizedCues.findIndex((nc) => nc.includes(word));
     if (idx >= 0) return { cue: cues[idx], index: idx };
   }
 
@@ -260,7 +280,7 @@ function normalizeVocabularyItems(rawItems, cleanedCues) {
     if (!raw || typeof raw !== "object") continue;
     const term = String(raw.term || raw.word || raw.phrase || "").trim();
     if (!term) continue;
-    const dedupeKey = term.toLowerCase();
+    const dedupeKey = normalizeTextForMatch(term) || term.toLowerCase();
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
 
@@ -750,7 +770,7 @@ export async function extractClassroomVocabulary(
     const llmCfg = await resolveLlmConfig(apiCode);
     const ratio = Math.min(50, Math.max(5, Number(difficultyRatio) || 20));
     const cacheKey = [
-      "v2",
+      "v3",
       videoId || bvid || pageUrl,
       track?.key || track?.id || track?.lan || "default",
       sectionId || "sec-1",
@@ -955,7 +975,8 @@ export async function extractClassroomVocabulary(
 
     const ttsSource =
       mapSubtitleLangToTtsSource(track?.lan, track?.lanDoc) ||
-      mapSubtitleLangToTtsSource("", detectedLanguage || "");
+      mapSubtitleLangToTtsSource("", detectedLanguage || "") ||
+      (hasArabicScript(items[0]?.term || cleanedCues[0]?.content || "") ? "阿拉伯语" : "");
 
     const payload = {
       ok: true,

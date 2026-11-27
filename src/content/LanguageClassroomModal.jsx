@@ -15,7 +15,15 @@ import {
   pickRecommendedStudyTrack,
   useWordbook,
 } from "../shared/wordbook.js";
+import {
+  findHighlightRanges,
+  hasArabicScript,
+  isRtlText,
+  isolateBidiInline,
+  normalizeTextForMatch,
+} from "../shared/textScript.js";
 import { useI18n } from "../shared/i18n/index.js";
+import { WordbookBoard } from "../components/WordbookBoard.jsx";
 
 const CLASSROOM_STORAGE_KEYS = pick(defaultOptions, [
   "pageTrsApi",
@@ -173,34 +181,29 @@ function RefreshSvg({ size = 13, spinning = false }) {
   );
 }
 
-function escapeRegExp(str) {
-  return String(str || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function renderHighlightedQuote(quote, term, surfaceForm) {
   const text = String(quote || "");
   if (!text) return null;
-  const targets = [surfaceForm, term]
-    .map((s) => String(s || "").trim())
-    .filter((s) => s.length >= 2)
-    .sort((a, b) => b.length - a.length);
-  if (targets.length === 0) return text;
-  try {
-    const pattern = new RegExp(`(${targets.map(escapeRegExp).join("|")})`, "gi");
-    const parts = text.split(pattern);
-    if (parts.length <= 1) return text;
-    return parts.map((part, idx) =>
-      idx % 2 === 1 ? (
-        <span key={idx} className="ndt-cls-highlight">
-          {part}
-        </span>
-      ) : (
-        <React.Fragment key={idx}>{part}</React.Fragment>
-      )
+  const ranges = findHighlightRanges(text, [surfaceForm, term]);
+  if (ranges.length === 0) return text;
+  const nodes = [];
+  let cursor = 0;
+  for (let i = 0; i < ranges.length; i += 1) {
+    const { start, end } = ranges[i];
+    if (start > cursor) {
+      nodes.push(<React.Fragment key={`t-${i}`}>{text.slice(cursor, start)}</React.Fragment>);
+    }
+    nodes.push(
+      <span key={`h-${i}`} className="ndt-cls-highlight">
+        {text.slice(start, end)}
+      </span>
     );
-  } catch {
-    return text;
+    cursor = end;
   }
+  if (cursor < text.length) {
+    nodes.push(<React.Fragment key="t-end">{text.slice(cursor)}</React.Fragment>);
+  }
+  return nodes;
 }
 
 function getCurrentVideoKey(href = window.location.href) {
@@ -276,6 +279,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
   // Wordbook tab state
   const [wbSearch, setWbSearch] = React.useState("");
   const [wbFilter, setWbFilter] = React.useState("all"); // all | learning | mastered
+  const [wbViewMode, setWbViewMode] = React.useState("focus"); // "focus" | "grid"
 
   // Toast feedback
   const [toastMsg, setToastMsg] = React.useState("");
@@ -285,6 +289,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
   const batchAllCancelRef = React.useRef(false);
   const sectionStripRef = React.useRef(null);
   const dotRailRef = React.useRef(null);
+  const wbBoardRef = React.useRef(null);
   const sectionStatesRef = React.useRef(sectionStates);
   sectionStatesRef.current = sectionStates;
 
@@ -997,8 +1002,8 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
   const wordbookByKey = React.useMemo(() => {
     const map = new Map();
     for (const entry of wordbook.items) {
-      const k = entry.key || normalizeTermKey(entry.term, entry.language);
-      map.set(k, entry);
+      if (entry.key) map.set(entry.key, entry);
+      map.set(normalizeTermKey(entry.term, entry.language), entry);
     }
     return map;
   }, [wordbook.items]);
@@ -1072,9 +1077,10 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
     async (item) => {
       if (!item) return;
       const saved = wordbook.hasTerm(item.term, studyLangKey);
+      const displayTerm = isolateBidiInline(item.term);
       if (saved) {
         await wordbook.removeItem(normalizeTermKey(item.term, studyLangKey));
-        showToast(`已从单词本移除「${item.term}」`);
+        showToast(`已从单词本移除「${displayTerm}」`);
       } else {
         setSessionMasteredIds((prev) => {
           if (!prev.has(item.id)) return prev;
@@ -1083,7 +1089,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
           return next;
         });
         await wordbook.addItem(buildWordbookPayload(item));
-        showToast(`已加入单词本「${item.term}」`);
+        showToast(`已加入单词本「${displayTerm}」`);
       }
     },
     [wordbook, studyLangKey, buildWordbookPayload, showToast]
@@ -1097,7 +1103,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
         langOverride ||
         activeSectionState.data?.ttsSource ||
         mapSubtitleLangToTtsSource(currentTrack?.lan, currentTrack?.lanDoc) ||
-        "";
+        (hasArabicScript(clean) ? "阿拉伯语" : "");
       messaging
         ._({
           action: "audio",
@@ -1197,7 +1203,16 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
       e.stopPropagation();
       e.stopImmediatePropagation();
 
-      if (isTyping || activeTab !== "study" || viewMode !== "focus" || !activeItem) {
+      if (isTyping) {
+        return;
+      }
+
+      if (activeTab === "wordbook") {
+        wbBoardRef.current?.handleKeyDown(e);
+        return;
+      }
+
+      if (activeTab !== "study" || viewMode !== "focus" || !activeItem) {
         return;
       }
 
@@ -1247,12 +1262,14 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
 
   const filteredWordbook = React.useMemo(() => {
     const q = wbSearch.trim().toLowerCase();
+    const normQ = normalizeTextForMatch(wbSearch);
     return wordbook.items.filter((item) => {
       if (wbFilter === "learning" && item.mastered) return false;
       if (wbFilter === "mastered" && !item.mastered) return false;
       if (!q) return true;
       return (
         String(item.term || "").toLowerCase().includes(q) ||
+        (normQ && normalizeTextForMatch(item.term || "").includes(normQ)) ||
         String(item.translation || "").toLowerCase().includes(q) ||
         String(item.sourceTitle || "").toLowerCase().includes(q) ||
         String(item.languageLabel || "").toLowerCase().includes(q)
@@ -1426,7 +1443,13 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                           }}
                           title={`${tr.lanDoc}${tr.author ? ` · ${tr.author}` : ""}`}
                         >
-                          <span>{isBusy ? "加载中..." : tr.lanDoc || tr.lan || "字幕"}</span>
+                          <span>
+                            {isBusy ? (
+                              "加载中..."
+                            ) : (
+                              <bdi dir="auto">{tr.lanDoc || tr.lan || "字幕"}</bdi>
+                            )}
+                          </span>
                         </button>
                       );
                     })}
@@ -1717,7 +1740,12 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                             onClick={() => startTrackStudy(tr)}
                           >
                             <div className="ndt-cls-track-card-top">
-                              <span className="ndt-cls-track-card-name">
+                              <span
+                                className={`ndt-cls-track-card-name${
+                                  isRtlText(tr.lanDoc || tr.lan) ? " is-rtl" : ""
+                                }`}
+                                dir="auto"
+                              >
                                 {tr.lanDoc || tr.lan || "字幕轨道"}
                               </span>
                               {isRec && <span className="ndt-cls-track-card-rec">推荐学习</span>}
@@ -1816,7 +1844,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                       )}
                     </div>
                     <h3 className="ndt-cls-hero-title">
-                      正在分析《{currentTrack?.lanDoc || currentTrack?.lan || "字幕"}》
+                      正在分析《<bdi dir="auto">{currentTrack?.lanDoc || currentTrack?.lan || "字幕"}</bdi>》
                       {isMultiSection && activeSection ? ` ${activeSection.title}` : ""}
                       中的难点词与短语...
                     </h3>
@@ -1854,7 +1882,13 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                         </span>
                         {activeProgress.latestTerm && (
                           <span className="ndt-cls-progress-chip is-accent">
-                            最新识别：{activeProgress.latestTerm}
+                            最新识别：
+                            <bdi
+                              dir="auto"
+                              className={isRtlText(activeProgress.latestTerm) ? "is-rtl" : undefined}
+                            >
+                              {activeProgress.latestTerm}
+                            </bdi>
                           </span>
                         )}
                       </div>
@@ -2020,7 +2054,14 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                 {/* Term Hero */}
                                 <div className="ndt-cls-word-header">
                                   <div className="ndt-cls-word-title-row">
-                                    <h3 className="ndt-cls-word-term">{activeItem.term}</h3>
+                                    <h3
+                                      className={`ndt-cls-word-term${
+                                        isRtlText(activeItem.term) ? " is-rtl" : ""
+                                      }`}
+                                      dir="auto"
+                                    >
+                                      {activeItem.term}
+                                    </h3>
                                     <button
                                       type="button"
                                       className="ndt-cls-speak-btn is-icon-only"
@@ -2065,7 +2106,17 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                       activeItem.surfaceForm.toLowerCase() !==
                                         activeItem.term.toLowerCase() && (
                                         <span className="ndt-cls-surface-chip">
-                                          字幕原形：{activeItem.surfaceForm}
+                                          字幕原形：
+                                          <bdi
+                                            dir="auto"
+                                            className={
+                                              isRtlText(activeItem.surfaceForm)
+                                                ? "is-rtl"
+                                                : undefined
+                                            }
+                                          >
+                                            {activeItem.surfaceForm}
+                                          </bdi>
                                         </span>
                                       )}
                                   </div>
@@ -2131,7 +2182,12 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                         )}
                                       </div>
                                     </div>
-                                    <div className="ndt-cls-quote-box">
+                                    <div
+                                      className={`ndt-cls-quote-box${
+                                        isRtlText(activeItem.videoQuote) ? " is-rtl" : ""
+                                      }`}
+                                      dir="auto"
+                                    >
                                       {renderHighlightedQuote(
                                         activeItem.videoQuote,
                                         activeItem.term,
@@ -2168,7 +2224,12 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                         {activeItem.examples.map((ex, idx) => (
                                           <div key={idx} className="ndt-cls-example-item">
                                             <div className="ndt-cls-example-top">
-                                              <div className="ndt-cls-example-src">
+                                              <div
+                                                className={`ndt-cls-example-src${
+                                                  isRtlText(ex.sentence) ? " is-rtl" : ""
+                                                }`}
+                                                dir="auto"
+                                              >
                                                 {renderHighlightedQuote(
                                                   ex.sentence,
                                                   activeItem.term,
@@ -2319,7 +2380,10 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                   <div>
                                     <button
                                       type="button"
-                                      className="ndt-cls-grid-term"
+                                      className={`ndt-cls-grid-term${
+                                        isRtlText(item.term) ? " is-rtl" : ""
+                                      }`}
+                                      dir="auto"
                                       onClick={() => {
                                         setActiveItemId(item.id);
                                         setViewMode("focus");
@@ -2352,7 +2416,12 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                 <div className="ndt-cls-grid-trans">{item.translation}</div>
 
                                 {previewSentence && (
-                                  <div className="ndt-cls-grid-ex">
+                                  <div
+                                    className={`ndt-cls-grid-ex${
+                                      isRtlText(previewSentence) ? " is-rtl" : ""
+                                    }`}
+                                    dir="auto"
+                                  >
                                     {renderHighlightedQuote(
                                       previewSentence,
                                       item.term,
@@ -2437,6 +2506,25 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                   </button>
                 </div>
 
+                {wordbook.items.length > 0 && (
+                  <div className="ndt-cls-ratio-group">
+                    <button
+                      type="button"
+                      className={`ndt-cls-ratio-btn ${wbViewMode === "focus" ? "is-active" : ""}`}
+                      onClick={() => setWbViewMode("focus")}
+                    >
+                      学习卡片
+                    </button>
+                    <button
+                      type="button"
+                      className={`ndt-cls-ratio-btn ${wbViewMode === "grid" ? "is-active" : ""}`}
+                      onClick={() => setWbViewMode("grid")}
+                    >
+                      全部总览
+                    </button>
+                  </div>
+                )}
+
                 <button
                   type="button"
                   className="ndt-cls-btn is-sm"
@@ -2448,142 +2536,30 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
               </div>
             </div>
 
-            {filteredWordbook.length === 0 ? (
-              <div className="ndt-cls-center-stage">
-                <h3 className="ndt-cls-hero-title">
-                  {wordbook.items.length === 0 ? "单词本还是空的" : "没有找到匹配的词条"}
-                </h3>
-                <p className="ndt-cls-hero-desc">
-                  {wordbook.items.length === 0
-                    ? "在「课前预习」中提取视频难点单词和短语后，点击「加入单词本」即可持久收藏并随时复习导出。"
-                    : "请尝试更换搜索关键词或切换筛选状态。"}
-                </p>
-                {wordbook.items.length === 0 && (
-                  <button
-                    type="button"
-                    className="ndt-cls-btn is-primary"
-                    onClick={() => setActiveTab("study")}
-                  >
-                    前往课前预习
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="ndt-cls-wb-list">
-                {filteredWordbook.map((item) => {
-                  const ex = item.examples?.[0];
-                  return (
-                    <div
-                      key={item.id}
-                      className={`ndt-cls-wb-card ${item.mastered ? "is-mastered" : ""}`}
-                    >
-                      <div className="ndt-cls-wb-card-top">
-                        <div>
-                          <div className="ndt-cls-wb-term-row">
-                            <span className="ndt-cls-wb-term">{item.term}</span>
-                            {item.phonetic && (
-                              <span className="ndt-cls-phonetic">{item.phonetic}</span>
-                            )}
-                            {item.pos && <span className="ndt-cls-pos-chip">{item.pos}</span>}
-                            {item.level && (
-                              <span className="ndt-cls-level-chip">{item.level}</span>
-                            )}
-                            {item.languageLabel && (
-                              <span className="ndt-cls-mini-tag">{item.languageLabel}</span>
-                            )}
-                          </div>
-                          <div
-                            className="ndt-cls-grid-trans"
-                            style={{ marginTop: 6 }}
-                          >
-                            {item.translation}
-                          </div>
-                          {item.explanation && (
-                            <div
-                              className="ndt-cls-explanation"
-                              style={{ marginTop: 4, fontSize: 12.5 }}
-                            >
-                              {item.explanation}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="ndt-cls-wb-actions">
-                          <button
-                            type="button"
-                            className="ndt-cls-speak-btn is-mini"
-                            onClick={() =>
-                              handleSpeak(
-                                item.term,
-                                mapSubtitleLangToTtsSource(item.language, item.languageLabel)
-                              )
-                            }
-                            title="朗读"
-                          >
-                            <SpeakerIcon size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            className={`ndt-cls-btn is-sm ${item.mastered ? "is-saved" : ""}`}
-                            onClick={() => wordbook.toggleMastered(item.id)}
-                          >
-                            <CheckIcon size={12} />
-                            <span>{item.mastered ? "已掌握" : "标记掌握"}</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="ndt-cls-btn is-sm is-danger-ghost"
-                            onClick={() => {
-                              wordbook.removeItem(item.id);
-                              showToast(`已移出「${item.term}」`);
-                            }}
-                          >
-                            移出
-                          </button>
-                        </div>
-                      </div>
-
-                      {ex?.sentence && (
-                        <div className="ndt-cls-grid-ex">
-                          <div>{renderHighlightedQuote(ex.sentence, item.term, item.surfaceForm)}</div>
-                          {ex.translation && (
-                            <div style={{ opacity: 0.8, marginTop: 2 }}>{ex.translation}</div>
-                          )}
-                        </div>
-                      )}
-
-                      {(item.sourceTitle || item.videoQuote) && (
-                        <div className="ndt-cls-wb-source">
-                          {item.sourceTitle && (
-                            <span>
-                              来源：
-                              {item.sourceUrl ? (
-                                <a href={item.sourceUrl} target="_blank" rel="noreferrer">
-                                  {item.sourceTitle}
-                                </a>
-                              ) : (
-                                item.sourceTitle
-                              )}
-                            </span>
-                          )}
-                          {item.sourceBvid &&
-                            resolvedVideoId === item.sourceBvid &&
-                            item.videoTime != null && (
-                              <button
-                                type="button"
-                                className="ndt-cls-time-btn"
-                                onClick={() => handleSeekVideo(item.videoTime, true)}
-                              >
-                                ▶ {formatSubtitleTime(item.videoTime)}
-                              </button>
-                            )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <WordbookBoard
+              ref={wbBoardRef}
+              items={filteredWordbook}
+              totalCount={wordbook.items.length}
+              viewMode={wbViewMode}
+              onViewModeChange={setWbViewMode}
+              onSpeak={(text, item) =>
+                handleSpeak(
+                  text,
+                  mapSubtitleLangToTtsSource(item?.language, item?.languageLabel)
+                )
+              }
+              onToggleMastered={(item) => {
+                wordbook.toggleMastered(item.id);
+              }}
+              onRemove={(item) => {
+                wordbook.removeItem(item.id);
+                showToast(`已移出「${isolateBidiInline(item.term)}」`);
+              }}
+              onSeekVideo={handleSeekVideo}
+              currentVideoId={resolvedVideoId}
+              onGoStudy={() => setActiveTab("study")}
+              enableKeyboardShortcuts={false}
+            />
           </div>
         )}
       </div>

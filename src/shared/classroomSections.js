@@ -1,4 +1,5 @@
 import { formatSubtitleTime } from "./subtitleTimeline.js";
+import { normalizeArabicText, stripBidiControls } from "./textScript.js";
 
 const SECTION_TARGET_DURATION_SEC = 5 * 60; // 5 minutes per section
 const MAX_SECTION_COUNT = 5; // At most 5 sections
@@ -6,12 +7,15 @@ const MAX_FIXED_DURATION_SEC = SECTION_TARGET_DURATION_SEC * MAX_SECTION_COUNT; 
 const SUB_BATCH_MAX_CUES = 150;
 const SUB_BATCH_MAX_CHARS = 6500;
 
+const CHAR_BASED_SCRIPT_RE =
+  /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0e00-\u0e7f\u0e80-\u0eff\u1780-\u17ff\u1000-\u109f]/g;
+
 export function cleanSubtitleCues(cues = []) {
   if (!Array.isArray(cues)) return [];
   const cleaned = [];
   let prevText = "";
   for (const cue of cues) {
-    const text = String(cue?.content || "")
+    const text = stripBidiControls(cue?.content || "")
       .replace(/\s+/g, " ")
       .trim();
     if (!text || text === prevText) continue;
@@ -28,12 +32,13 @@ export function cleanSubtitleCues(cues = []) {
 export function estimateUniqueLexicalUnits(cues = []) {
   const joined = cues.map((c) => c.content).join(" ");
   if (!joined.trim()) return 0;
-  const latinWords = joined.match(/[A-Za-zÀ-ÖØ-öø-ÿ\u0400-\u04FF'-]{2,}/g) || [];
-  const cjkChars = joined.match(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/g) || [];
-  if (latinWords.length >= cjkChars.length / 2) {
-    return new Set(latinWords.map((w) => w.toLowerCase())).size;
+  const charBased = joined.match(CHAR_BASED_SCRIPT_RE) || [];
+  const nonCharBased = normalizeArabicText(joined.replace(CHAR_BASED_SCRIPT_RE, " "));
+  const words = nonCharBased.match(/[\p{L}\p{M}'’-]{2,}/gu) || [];
+  if (words.length >= charBased.length / 2) {
+    return new Set(words.map((w) => w.toLowerCase())).size;
   }
-  return Math.round(cjkChars.length / 2.2);
+  return Math.round(charBased.length / 2.2);
 }
 
 export function computeSectionVocabTarget(estimatedWords, ratioPercent = 20, isMultiSection = false) {

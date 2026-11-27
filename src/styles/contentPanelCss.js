@@ -1181,6 +1181,20 @@ export default `
   word-break: break-word;
 }
 
+#ndt-subtitle-panel .ndt-sub-line-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#ndt-subtitle-panel .ndt-sub-line-text.is-rtl {
+  direction: rtl;
+  text-align: right;
+  unicode-bidi: isolate;
+  letter-spacing: 0;
+  line-height: 1.75;
+  font-family: "Noto Naskh Arabic", "Geeza Pro", "Segoe UI", Tahoma, Arial, sans-serif;
+}
+
 #ndt-subtitle-panel .ndt-sub-row.is-active .ndt-sub-line {
   font-size: 14px;
   font-weight: 600;

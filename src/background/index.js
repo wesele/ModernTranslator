@@ -54,6 +54,7 @@ import {
   registerClassroomStreamHandler,
 } from "./languageClassroom.js";
 import { writeToClipboard, playWithAudio, playWithSpeech } from "../shared/domMedia.js";
+import { hasArabicScript } from "../shared/textScript.js";
 
 // Forward iframe selection messages between frames
 chrome.runtime.onMessage.addListener((msg, sender) => {
@@ -760,6 +761,8 @@ onMessage((msg, ctx) => {
 
     case "audio":
       return (async (audioReq) => {
+        const resolvedSource =
+          audioReq.source || (hasArabicScript(audioReq.text) ? "阿拉伯语" : "");
         try {
           if (systemTTS === "prior") {
             throw new Error("始终使用系统语音朗读");
@@ -767,9 +770,9 @@ onMessage((msg, ctx) => {
           let ttsUrl;
           if (audioReq.ttsURI) {
             ttsUrl = audioReq.ttsURI;
-          } else if (audioReq.source) {
+          } else if (resolvedSource) {
             const translator = getTranslator(audioReq.apiId);
-            ttsUrl = await translator.getTTS(audioReq.text, audioReq.source);
+            ttsUrl = await translator.getTTS(audioReq.text, resolvedSource);
           }
           if (!ttsUrl) throw new Error("跳过");
           audioDebug("开始用接口自带 TTS 地址朗读 %O", audioReq);
@@ -785,11 +788,11 @@ onMessage((msg, ctx) => {
             rate: audioRate,
             uiLocale: getUiLocale(),
           };
-          const group = audioReq.source && ACCENT_GROUP_MAP[audioReq.source];
+          const group = resolvedSource && ACCENT_GROUP_MAP[resolvedSource];
           if (group && systemTTSAccent[group]) {
             speechOpts.lang = systemTTSAccent[group];
           }
-          const voiceLang = speechOpts.lang || (audioReq.source && TTS_LANG_MAP[audioReq.source]);
+          const voiceLang = speechOpts.lang || (resolvedSource && TTS_LANG_MAP[resolvedSource]);
           speechOpts.systemVoiceLang = voiceLang;
           if (voiceLang) {
             if (!speechOpts.lang) speechOpts.lang = voiceLang;

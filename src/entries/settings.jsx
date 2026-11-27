@@ -37,8 +37,21 @@ import {
   mapSubtitleLangToTtsSource,
   useWordbook,
 } from "../shared/wordbook.js";
+import { hasArabicScript, normalizeTextForMatch } from "../shared/textScript.js";
+import { WordbookBoard } from "../components/WordbookBoard.jsx";
 
-const WORDBOOK_TAB_ID = "__wordbook__";
+const TOP_TAB_LLM = "llm";
+const TOP_TAB_WORDBOOK = "wordbook";
+const TOP_TAB_OTHER = "other";
+
+function getInitialTopTab() {
+  if (typeof window === "undefined") return TOP_TAB_LLM;
+  const hash = (window.location.hash || "").replace(/^#/, "").toLowerCase();
+  if (hash === TOP_TAB_WORDBOOK || hash === TOP_TAB_OTHER || hash === TOP_TAB_LLM) {
+    return hash;
+  }
+  return TOP_TAB_LLM;
+}
 
 if (typeof document !== "undefined") {
   new InteractionModeEngine(document.documentElement, Classes.FOCUS_DISABLED).start();
@@ -59,6 +72,8 @@ const SETTINGS_STORAGE_DEFAULTS = pick(defaultOptions, [
   "officialLLMStreamEnabled",
   "officialLLMMaxConcurrency",
   "customOpenAIServices",
+  "bilibiliVideoIntegration",
+  "youtubeVideoIntegration",
 ]);
 
 const TEST_PROBE_BY_LOCALE = {
@@ -832,6 +847,7 @@ function SettingsApp() {
   }, [locale, t]);
 
   const [settings, setSettings] = useStorage(SETTINGS_STORAGE_DEFAULTS);
+  const [topTab, setTopTab] = React.useState(getInitialTopTab);
   const [activeId, setActiveId] = React.useState(OFFICIAL_LLM_ID);
   const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
   const [showPromptEditor, setShowPromptEditor] = React.useState(false);
@@ -927,6 +943,8 @@ function SettingsApp() {
   const pageTrsApi = settings?.pageTrsApi || SETTINGS_STORAGE_DEFAULTS.pageTrsApi;
   const customServices = settings?.customOpenAIServices || [];
   const darkMode = settings?.darkMode || SETTINGS_STORAGE_DEFAULTS.darkMode;
+  const bilibiliVideoIntegration = settings?.bilibiliVideoIntegration !== false;
+  const youtubeVideoIntegration = settings?.youtubeVideoIntegration !== false;
 
   const officialBaseUrl =
     settings?.officialLLMBaseUrl ?? OFFICIAL_LLM_BASE_URL;
@@ -1016,7 +1034,7 @@ function SettingsApp() {
       return undefined;
     }
 
-    if (activeId !== OFFICIAL_LLM_ID) {
+    if (topTab !== TOP_TAB_LLM || activeId !== OFFICIAL_LLM_ID) {
       return undefined;
     }
 
@@ -1027,12 +1045,13 @@ function SettingsApp() {
     return () => {
       clearTimeout(timer);
     };
-  }, [activeId, officialBaseUrl, officialKey, refreshOfficialQuota]);
+  }, [topTab, activeId, officialBaseUrl, officialKey, refreshOfficialQuota]);
 
   React.useEffect(() => {
     const onFocusOrVisible = () => {
       if (
         document.visibilityState === "visible" &&
+        topTab === TOP_TAB_LLM &&
         activeId === OFFICIAL_LLM_ID &&
         String(officialKey || "").trim()
       ) {
@@ -1048,7 +1067,7 @@ function SettingsApp() {
         officialQuotaAbortRef.current.abort();
       }
     };
-  }, [activeId, officialKey, refreshOfficialQuota]);
+  }, [topTab, activeId, officialKey, refreshOfficialQuota]);
 
   const [officialModelsMeta, setOfficialModelsMeta] = React.useState(null);
   const [officialPerfDetail, setOfficialPerfDetail] = React.useState(null);
@@ -1065,7 +1084,7 @@ function SettingsApp() {
   }, [officialBaseUrl, officialKey]);
 
   React.useEffect(() => {
-    if (activeId !== OFFICIAL_LLM_ID) return undefined;
+    if (topTab !== TOP_TAB_LLM || activeId !== OFFICIAL_LLM_ID) return undefined;
     const trimmedModel = String(officialModel || "").trim();
     if (!trimmedModel) {
       setOfficialPerfDetail(null);
@@ -1105,19 +1124,19 @@ function SettingsApp() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [activeId, officialBaseUrl, officialKey, officialModel]);
+  }, [topTab, activeId, officialBaseUrl, officialKey, officialModel]);
 
   const activeCustomService = customServices.find((item) => item.id === activeId) || null;
   const wordbook = useWordbook();
   const [wbSearch, setWbSearch] = React.useState("");
   const [wbFilter, setWbFilter] = React.useState("all");
+  const [wbViewMode, setWbViewMode] = React.useState("focus");
 
   React.useEffect(() => {
     if (
       activeId !== OFFICIAL_LLM_ID &&
       activeId !== ServiceId.Microsoft &&
       activeId !== ServiceId.Google &&
-      activeId !== WORDBOOK_TAB_ID &&
       !activeCustomService
     ) {
       setActiveId(OFFICIAL_LLM_ID);
@@ -1807,93 +1826,103 @@ function SettingsApp() {
       );
     }
 
-    if (activeId === WORDBOOK_TAB_ID) {
-      const q = wbSearch.trim().toLowerCase();
-      const filtered = wordbook.items.filter((item) => {
-        if (wbFilter === "learning" && item.mastered) return false;
-        if (wbFilter === "mastered" && !item.mastered) return false;
-        if (!q) return true;
-        return (
-          String(item.term || "").toLowerCase().includes(q) ||
-          String(item.translation || "").toLowerCase().includes(q) ||
-          String(item.sourceTitle || "").toLowerCase().includes(q) ||
-          String(item.languageLabel || "").toLowerCase().includes(q)
-        );
-      });
+    return null;
+  };
 
-      const handleExportTsv = () => {
-        if (wordbook.items.length === 0) return;
-        const tsv = exportWordbookToTsv(wordbook.items);
-        const blob = new Blob([tsv], { type: "text/tab-separated-values;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `language-classroom-wordbook-${new Date().toISOString().slice(0, 10)}.tsv`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      };
-
-      const handleSpeakItem = (item) => {
-        messaging
-          ._({
-            action: "audio",
-            url: {
-              apiId: "GoogleWeb",
-              source: mapSubtitleLangToTtsSource(item.language, item.languageLabel),
-              text: item.term,
-            },
-          })
-          .catch(() => {});
-      };
-
+  const renderWordbookPanel = () => {
+    const q = wbSearch.trim().toLowerCase();
+    const normQ = normalizeTextForMatch(wbSearch);
+    const filtered = wordbook.items.filter((item) => {
+      if (wbFilter === "learning" && item.mastered) return false;
+      if (wbFilter === "mastered" && !item.mastered) return false;
+      if (!q) return true;
       return (
-        <>
-          <div className="inspector-header">
-            <div className="inspector-title-wrap">
-              <div className="inspector-icon wb-inspector-icon">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                  <path
-                    d="M10 2.4l2.3 4.65 5.13.75-3.71 3.62.88 5.11L10 14.12l-4.6 2.41.88-5.11-3.71-3.62 5.13-.75L10 2.4z"
-                    fill="#f97316"
-                    stroke="#f97316"
-                    strokeWidth="1.2"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </div>
-              <div>
-                <div className="inspector-heading-row">
-                  <h1 className="inspector-heading">语言课堂 · 单词本</h1>
-                  <span className="inspector-badge is-ready">{wordbook.items.length} 词条</span>
-                </div>
-                <p className="inspector-subtitle">
-                  收录自 B 站 / YouTube「语言课堂」的难点单词与短语，支持搜索复习、标记掌握与导出 Anki TSV
-                </p>
-              </div>
-            </div>
+        String(item.term || "").toLowerCase().includes(q) ||
+        (normQ && normalizeTextForMatch(item.term || "").includes(normQ)) ||
+        String(item.translation || "").toLowerCase().includes(q) ||
+        String(item.sourceTitle || "").toLowerCase().includes(q) ||
+        String(item.languageLabel || "").toLowerCase().includes(q)
+      );
+    });
 
-            <div className="inspector-header-actions">
-              <button
-                type="button"
-                className="ndt-btn"
-                disabled={wordbook.items.length === 0}
-                onClick={handleExportTsv}
-              >
-                导出 TSV (Anki)
-              </button>
+    const handleExportTsv = () => {
+      if (wordbook.items.length === 0) return;
+      const tsv = exportWordbookToTsv(wordbook.items);
+      const blob = new Blob([tsv], { type: "text/tab-separated-values;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `language-classroom-wordbook-${new Date().toISOString().slice(0, 10)}.tsv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    };
+
+    const handleSpeakText = (text, item) => {
+      const clean = String(text || "").trim();
+      if (!clean) return;
+      messaging
+        ._({
+          action: "audio",
+          url: {
+            apiId: "GoogleWeb",
+            source:
+              mapSubtitleLangToTtsSource(item?.language, item?.languageLabel) ||
+              (hasArabicScript(clean) ? "阿拉伯语" : ""),
+            text: clean,
+          },
+        })
+        .catch(() => {});
+    };
+
+    return (
+      <>
+        <div className="inspector-header">
+          <div className="inspector-title-wrap">
+            <div className="inspector-icon wb-inspector-icon">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path
+                  d="M10 2.4l2.3 4.65 5.13.75-3.71 3.62.88 5.11L10 14.12l-4.6 2.41.88-5.11-3.71-3.62 5.13-.75L10 2.4z"
+                  fill="#f97316"
+                  stroke="#f97316"
+                  strokeWidth="1.2"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <div>
+              <div className="inspector-heading-row">
+                <h1 className="inspector-heading">语言课堂 · 单词本</h1>
+                <span className="inspector-badge is-ready">{wordbook.items.length} 词条</span>
+              </div>
+              <p className="inspector-subtitle">
+                收录自 B 站 / YouTube「语言课堂」的难点单词与短语，支持学习卡片复习、全部总览与导出 Anki TSV
+              </p>
             </div>
           </div>
 
-          <div className="wb-settings-toolbar">
-            <input
-              type="text"
-              className="ndt-input wb-settings-search"
-              placeholder="搜索单词、短语、释义或来源视频..."
-              value={wbSearch}
-              onChange={(e) => setWbSearch(e.target.value)}
-            />
+          <div className="inspector-header-actions">
+            <button
+              type="button"
+              className="ndt-btn"
+              disabled={wordbook.items.length === 0}
+              onClick={handleExportTsv}
+            >
+              导出 TSV (Anki)
+            </button>
+          </div>
+        </div>
+
+        <div className="wb-settings-toolbar">
+          <input
+            type="text"
+            className="ndt-input wb-settings-search"
+            placeholder="搜索单词、短语、释义或来源视频..."
+            value={wbSearch}
+            onChange={(e) => setWbSearch(e.target.value)}
+          />
+          <div className="wb-settings-toolbar-right">
             <div className="theme-segmented">
               <button
                 type="button"
@@ -1917,90 +1946,156 @@ function SettingsApp() {
                 已掌握 ({wordbook.items.filter((i) => i.mastered).length})
               </button>
             </div>
-          </div>
 
-          {filtered.length === 0 ? (
-            <div className="wb-settings-empty">
-              {wordbook.items.length === 0
-                ? "单词本还是空的。打开任意带字幕的 B 站视频，点击播放器右下角插件图标进入「语言课堂」即可预习并收藏生词。"
-                : "没有找到匹配的词条。"}
-            </div>
-          ) : (
-            <div className="wb-settings-list">
-              {filtered.map((item) => (
-                <div
-                  key={item.id}
-                  className={`wb-settings-card ${item.mastered ? "is-mastered" : ""}`}
+            {wordbook.items.length > 0 && (
+              <div className="theme-segmented">
+                <button
+                  type="button"
+                  className={`theme-segmented-btn ${wbViewMode === "focus" ? "is-active" : ""}`}
+                  onClick={() => setWbViewMode("focus")}
                 >
-                  <div className="wb-settings-card-head">
-                    <div className="wb-settings-term-row">
-                      <span className="wb-settings-term">{item.term}</span>
-                      {item.phonetic && <span className="wb-settings-chip">{item.phonetic}</span>}
-                      {item.pos && <span className="wb-settings-chip is-pos">{item.pos}</span>}
-                      {item.level && <span className="wb-settings-chip is-lvl">{item.level}</span>}
-                      {item.languageLabel && (
-                        <span className="wb-settings-chip">{item.languageLabel}</span>
-                      )}
-                    </div>
-                    <div className="wb-settings-actions">
-                      <button
-                        type="button"
-                        className="ndt-btn"
-                        title="朗读"
-                        onClick={() => handleSpeakItem(item)}
-                      >
-                        <Icon icon="volume-up" size={12} />
-                      </button>
-                      <button
-                        type="button"
-                        className={`ndt-btn ${item.mastered ? "is-primary" : ""}`}
-                        onClick={() => wordbook.toggleMastered(item.id)}
-                      >
-                        {item.mastered ? "已掌握" : "标记掌握"}
-                      </button>
-                      <button
-                        type="button"
-                        className="ndt-btn"
-                        title="移出单词本"
-                        onClick={() => wordbook.removeItem(item.id)}
-                      >
-                        <Icon icon="trash" size={12} />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="wb-settings-trans">{item.translation}</div>
-                  {item.explanation && (
-                    <div className="wb-settings-exp">{item.explanation}</div>
-                  )}
-                  {item.examples?.[0]?.sentence && (
-                    <div className="wb-settings-ex">
-                      <div>{item.examples[0].sentence}</div>
-                      {item.examples[0].translation && (
-                        <div className="wb-settings-ex-zh">{item.examples[0].translation}</div>
-                      )}
-                    </div>
-                  )}
-                  {item.sourceTitle && (
-                    <div className="wb-settings-source">
-                      来源视频：
-                      {item.sourceUrl ? (
-                        <a href={item.sourceUrl} target="_blank" rel="noreferrer">
-                          {item.sourceTitle}
-                        </a>
-                      ) : (
-                        item.sourceTitle
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
+                  学习卡片
+                </button>
+                <button
+                  type="button"
+                  className={`theme-segmented-btn ${wbViewMode === "grid" ? "is-active" : ""}`}
+                  onClick={() => setWbViewMode("grid")}
+                >
+                  全部总览
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <WordbookBoard
+          items={filtered}
+          totalCount={wordbook.items.length}
+          viewMode={wbViewMode}
+          onViewModeChange={setWbViewMode}
+          onSpeak={handleSpeakText}
+          onToggleMastered={(item) => wordbook.toggleMastered(item.id)}
+          onRemove={(item) => wordbook.removeItem(item.id)}
+          emptyHint="单词本还是空的。打开任意带字幕的 B 站或 YouTube 视频，点击播放器右下角插件图标进入「语言课堂」即可预习并收藏生词。"
+          enableKeyboardShortcuts={topTab === TOP_TAB_WORDBOOK}
+          className={`wb-settings-board ${wbViewMode === "grid" ? "is-grid-mode" : ""}`}
+        />
+      </>
+    );
+  };
+
+  const renderOtherSettingsPanel = () => (
+    <>
+      <div className="inspector-header">
+        <div className="inspector-title-wrap">
+          <div className="inspector-icon">
+            <Icon icon="cog" size={18} />
+          </div>
+          <div>
+            <div className="inspector-heading-row">
+              <h1 className="inspector-heading">{t("settings.otherTitle")}</h1>
             </div>
-          )}
-        </>
+            <p className="inspector-subtitle">{t("settings.otherSubtitle")}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="settings-form">
+        <section className="other-settings-section">
+          <div className="other-section-title">{t("settings.otherVideoSection")}</div>
+          <div className="other-switch-list">
+            <div className="usage-row is-feature-row">
+              <div className="feature-row-left">
+                <span className="feature-row-icon is-bilibili" aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                    <path
+                      d="M6.5 3.5L8.6 5.6M13.5 3.5L11.4 5.6"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                    />
+                    <rect
+                      x="2.8"
+                      y="5.6"
+                      width="14.4"
+                      height="10.6"
+                      rx="2.6"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                    />
+                    <path
+                      d="M7.3 9.5v2.2M12.7 9.5v2.2"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </span>
+                <div className="usage-row-text">
+                  <span className="usage-row-title">{t("settings.bilibiliIntegrationTitle")}</span>
+                  <span className="usage-row-desc">{t("settings.bilibiliIntegrationDesc")}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={bilibiliVideoIntegration}
+                aria-label={t("settings.bilibiliIntegrationTitle")}
+                className={`ndt-switch ${bilibiliVideoIntegration ? "is-checked" : ""}`}
+                onClick={() =>
+                  updateStorage({ bilibiliVideoIntegration: !bilibiliVideoIntegration })
+                }
+              />
+            </div>
+
+            <div className="usage-row is-feature-row">
+              <div className="feature-row-left">
+                <span className="feature-row-icon is-youtube" aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                    <rect
+                      x="2.4"
+                      y="4.6"
+                      width="15.2"
+                      height="10.8"
+                      rx="3"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                    />
+                    <path d="M8.5 7.7L13 10L8.5 12.3V7.7Z" fill="currentColor" />
+                  </svg>
+                </span>
+                <div className="usage-row-text">
+                  <span className="usage-row-title">{t("settings.youtubeIntegrationTitle")}</span>
+                  <span className="usage-row-desc">{t("settings.youtubeIntegrationDesc")}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={youtubeVideoIntegration}
+                aria-label={t("settings.youtubeIntegrationTitle")}
+                className={`ndt-switch ${youtubeVideoIntegration ? "is-checked" : ""}`}
+                onClick={() =>
+                  updateStorage({ youtubeVideoIntegration: !youtubeVideoIntegration })
+                }
+              />
+            </div>
+          </div>
+        </section>
+      </div>
+    </>
+  );
+
+  const handleSelectTopTab = (nextTab) => {
+    setTopTab(nextTab);
+    if (typeof window !== "undefined" && window.history?.replaceState) {
+      const nextHash = nextTab === TOP_TAB_LLM ? "" : `#${nextTab}`;
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}${nextHash}`
       );
     }
-
-    return null;
   };
 
   return (
@@ -2031,181 +2126,225 @@ function SettingsApp() {
       </header>
 
       <div className="ndt-workspace-wrap">
-        <div className="ndt-workspace-shell">
-          <aside className="service-rail" aria-label={t("settings.railLabel")}>
-            <div className="rail-section">
-              <div className="rail-section-header">
-                <span className="rail-section-label">{t("settings.railBuiltIn")}</span>
-              </div>
-              <div className="rail-list">
-                <button
-                  type="button"
-                  className={`rail-item ${activeId === OFFICIAL_LLM_ID ? "is-selected" : ""}`}
-                  onClick={() => setActiveId(OFFICIAL_LLM_ID)}
-                >
-                  <span className="rail-item-icon">
-                    <ServiceGlyph kind="official" />
-                  </span>
-                  <span className="rail-item-meta">
-                    <span className="rail-item-title-row">
-                      <span className="rail-item-title">{t("service.officialLlm")}</span>
-                      {pageTrsApi === OFFICIAL_LLM_ID && (
-                        <span className="rail-default-badge">{t("settings.railDefaultBadge")}</span>
-                      )}
-                    </span>
-                    <span className="rail-item-sub">
-                      {officialModel ||
-                        (officialKey
-                          ? t("settings.railClickSelectModel")
-                          : t("settings.railNeedKey"))}
-                    </span>
-                  </span>
-                  <span className={`status-dot ${officialReady ? "is-ready" : "is-warn"}`} />
-                </button>
+        <div className="ndt-page-tabs-bar">
+          <nav
+            className="ndt-page-tabs"
+            role="tablist"
+            aria-label={t("settings.tabsAriaLabel")}
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={topTab === TOP_TAB_LLM}
+              className={`ndt-page-tab ${topTab === TOP_TAB_LLM ? "is-active" : ""}`}
+              onClick={() => handleSelectTopTab(TOP_TAB_LLM)}
+            >
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path
+                  d="M10 2.5l1.55 4.55L16.1 8.6l-4.55 1.55L10 14.7l-1.55-4.55L3.9 8.6l4.55-1.55L10 2.5z"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M15.4 13.4l.75 1.9 1.9.75-1.9.75-.75 1.9-.75-1.9-1.9-.75 1.9-.75.75-1.9z"
+                  fill="currentColor"
+                />
+              </svg>
+              <span>{t("settings.tabLlm")}</span>
+            </button>
 
-                <button
-                  type="button"
-                  className={`rail-item ${activeId === ServiceId.Microsoft ? "is-selected" : ""}`}
-                  onClick={() => setActiveId(ServiceId.Microsoft)}
-                >
-                  <span className="rail-item-icon">
-                    <ServiceGlyph kind="microsoft" />
-                  </span>
-                  <span className="rail-item-meta">
-                    <span className="rail-item-title-row">
-                      <span className="rail-item-title">{t("service.microsoft")}</span>
-                      {pageTrsApi === ServiceId.Microsoft && (
-                        <span className="rail-default-badge">{t("settings.railDefaultBadge")}</span>
-                      )}
-                    </span>
-                    <span className="rail-item-sub">{t("settings.railBuiltInNoKey")}</span>
-                  </span>
-                  <span className="status-dot is-ready" />
-                </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={topTab === TOP_TAB_WORDBOOK}
+              className={`ndt-page-tab ${topTab === TOP_TAB_WORDBOOK ? "is-active" : ""}`}
+              onClick={() => handleSelectTopTab(TOP_TAB_WORDBOOK)}
+            >
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path
+                  d="M10 2.6l2.25 4.55 5.02.73-3.63 3.54.86 5-4.5-2.36-4.5 2.36.86-5-3.63-3.54 5.02-.73L10 2.6z"
+                  fill={topTab === TOP_TAB_WORDBOOK ? "#f97316" : "none"}
+                  stroke={topTab === TOP_TAB_WORDBOOK ? "#f97316" : "currentColor"}
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span>{t("settings.tabWordbook")}</span>
+              {wordbook.items.length > 0 && (
+                <span className="ndt-page-tab-badge">{wordbook.items.length}</span>
+              )}
+            </button>
 
-                <button
-                  type="button"
-                  className={`rail-item ${activeId === ServiceId.Google ? "is-selected" : ""}`}
-                  onClick={() => setActiveId(ServiceId.Google)}
-                >
-                  <span className="rail-item-icon">
-                    <ServiceGlyph kind="google" />
-                  </span>
-                  <span className="rail-item-meta">
-                    <span className="rail-item-title-row">
-                      <span className="rail-item-title">{t("service.google")}</span>
-                      {pageTrsApi === ServiceId.Google && (
-                        <span className="rail-default-badge">{t("settings.railDefaultBadge")}</span>
-                      )}
-                    </span>
-                    <span className="rail-item-sub">{t("settings.railBuiltInNoKey")}</span>
-                  </span>
-                  <span className="status-dot is-ready" />
-                </button>
-              </div>
-            </div>
-
-            <div className="rail-section">
-              <div className="rail-section-header">
-                <span className="rail-section-label">{t("settings.railCustomSection")}</span>
-              </div>
-
-              <div className="rail-list">
-                {customServices.length > 0 ? (
-                  customServices.map((svc) => {
-                    const ready = Boolean(svc.baseUrl?.trim() && svc.model?.trim());
-                    return (
-                      <button
-                        key={svc.id}
-                        type="button"
-                        className={`rail-item ${activeId === svc.id ? "is-selected" : ""}`}
-                        onClick={() => setActiveId(svc.id)}
-                      >
-                        <span className="rail-item-icon">
-                          <ServiceGlyph kind="custom" />
-                        </span>
-                        <span className="rail-item-meta">
-                          <span className="rail-item-title-row">
-                            <span className="rail-item-title">
-                              {svc.name || t("settings.railUnnamedService")}
-                            </span>
-                            {pageTrsApi === svc.id && (
-                              <span className="rail-default-badge">
-                                {t("settings.railDefaultBadge")}
-                              </span>
-                            )}
-                          </span>
-                          <span className="rail-item-sub">
-                            {svc.model || t("settings.railNoModel")}
-                          </span>
-                        </span>
-                        <span className={`status-dot ${ready ? "is-ready" : "is-warn"}`} />
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div className="rail-empty-text">{t("settings.railEmptyCustom")}</div>
-                )}
-              </div>
-            </div>
-
-            <div className="rail-section">
-              <div className="rail-section-header">
-                <span className="rail-section-label">语言课堂</span>
-              </div>
-              <div className="rail-list">
-                <button
-                  type="button"
-                  className={`rail-item ${activeId === WORDBOOK_TAB_ID ? "is-selected" : ""}`}
-                  onClick={() => setActiveId(WORDBOOK_TAB_ID)}
-                >
-                  <span className="rail-item-icon">
-                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                      <path
-                        d="M10 2.4l2.3 4.65 5.13.75-3.71 3.62.88 5.11L10 14.12l-4.6 2.41.88-5.11-3.71-3.62 5.13-.75L10 2.4z"
-                        fill="#f97316"
-                        stroke="#f97316"
-                        strokeWidth="1.2"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </span>
-                  <span className="rail-item-meta">
-                    <span className="rail-item-title-row">
-                      <span className="rail-item-title">我的单词本</span>
-                    </span>
-                    <span className="rail-item-sub">
-                      已收藏 {wordbook.items.length} 个词条
-                    </span>
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            <div className="rail-footer">
-              <button
-                type="button"
-                className="rail-add-btn"
-                onClick={handleAddCustomService}
-              >
-                <Icon icon="plus" size={13} />
-                <span>{t("settings.railAddCustom")}</span>
-              </button>
-            </div>
-          </aside>
-
-          <main className="service-inspector">
-            {renderInspector()}
-            {activeId && activeId !== WORDBOOK_TAB_ID && (
-              <ServiceCacheBar
-                count={cacheCounts[activeId] ?? 0}
-                loading={cacheLoading}
-                clearing={clearingCacheId === activeId}
-                onClear={() => handleClearServiceCache(activeId)}
-              />
-            )}
-          </main>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={topTab === TOP_TAB_OTHER}
+              className={`ndt-page-tab ${topTab === TOP_TAB_OTHER ? "is-active" : ""}`}
+              onClick={() => handleSelectTopTab(TOP_TAB_OTHER)}
+            >
+              <Icon icon="cog" size={13} />
+              <span>{t("settings.tabOther")}</span>
+            </button>
+          </nav>
         </div>
+
+        {topTab === TOP_TAB_LLM && (
+          <div className="ndt-workspace-shell">
+            <aside className="service-rail" aria-label={t("settings.railLabel")}>
+              <div className="rail-section">
+                <div className="rail-section-header">
+                  <span className="rail-section-label">{t("settings.railBuiltIn")}</span>
+                </div>
+                <div className="rail-list">
+                  <button
+                    type="button"
+                    className={`rail-item ${activeId === OFFICIAL_LLM_ID ? "is-selected" : ""}`}
+                    onClick={() => setActiveId(OFFICIAL_LLM_ID)}
+                  >
+                    <span className="rail-item-icon">
+                      <ServiceGlyph kind="official" />
+                    </span>
+                    <span className="rail-item-meta">
+                      <span className="rail-item-title-row">
+                        <span className="rail-item-title">{t("service.officialLlm")}</span>
+                        {pageTrsApi === OFFICIAL_LLM_ID && (
+                          <span className="rail-default-badge">{t("settings.railDefaultBadge")}</span>
+                        )}
+                      </span>
+                      <span className="rail-item-sub">
+                        {officialModel ||
+                          (officialKey
+                            ? t("settings.railClickSelectModel")
+                            : t("settings.railNeedKey"))}
+                      </span>
+                    </span>
+                    <span className={`status-dot ${officialReady ? "is-ready" : "is-warn"}`} />
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`rail-item ${activeId === ServiceId.Microsoft ? "is-selected" : ""}`}
+                    onClick={() => setActiveId(ServiceId.Microsoft)}
+                  >
+                    <span className="rail-item-icon">
+                      <ServiceGlyph kind="microsoft" />
+                    </span>
+                    <span className="rail-item-meta">
+                      <span className="rail-item-title-row">
+                        <span className="rail-item-title">{t("service.microsoft")}</span>
+                        {pageTrsApi === ServiceId.Microsoft && (
+                          <span className="rail-default-badge">{t("settings.railDefaultBadge")}</span>
+                        )}
+                      </span>
+                      <span className="rail-item-sub">{t("settings.railBuiltInNoKey")}</span>
+                    </span>
+                    <span className="status-dot is-ready" />
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`rail-item ${activeId === ServiceId.Google ? "is-selected" : ""}`}
+                    onClick={() => setActiveId(ServiceId.Google)}
+                  >
+                    <span className="rail-item-icon">
+                      <ServiceGlyph kind="google" />
+                    </span>
+                    <span className="rail-item-meta">
+                      <span className="rail-item-title-row">
+                        <span className="rail-item-title">{t("service.google")}</span>
+                        {pageTrsApi === ServiceId.Google && (
+                          <span className="rail-default-badge">{t("settings.railDefaultBadge")}</span>
+                        )}
+                      </span>
+                      <span className="rail-item-sub">{t("settings.railBuiltInNoKey")}</span>
+                    </span>
+                    <span className="status-dot is-ready" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="rail-section">
+                <div className="rail-section-header">
+                  <span className="rail-section-label">{t("settings.railCustomSection")}</span>
+                </div>
+
+                <div className="rail-list">
+                  {customServices.length > 0 ? (
+                    customServices.map((svc) => {
+                      const ready = Boolean(svc.baseUrl?.trim() && svc.model?.trim());
+                      return (
+                        <button
+                          key={svc.id}
+                          type="button"
+                          className={`rail-item ${activeId === svc.id ? "is-selected" : ""}`}
+                          onClick={() => setActiveId(svc.id)}
+                        >
+                          <span className="rail-item-icon">
+                            <ServiceGlyph kind="custom" />
+                          </span>
+                          <span className="rail-item-meta">
+                            <span className="rail-item-title-row">
+                              <span className="rail-item-title">
+                                {svc.name || t("settings.railUnnamedService")}
+                              </span>
+                              {pageTrsApi === svc.id && (
+                                <span className="rail-default-badge">
+                                  {t("settings.railDefaultBadge")}
+                                </span>
+                              )}
+                            </span>
+                            <span className="rail-item-sub">
+                              {svc.model || t("settings.railNoModel")}
+                            </span>
+                          </span>
+                          <span className={`status-dot ${ready ? "is-ready" : "is-warn"}`} />
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="rail-empty-text">{t("settings.railEmptyCustom")}</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rail-footer">
+                <button
+                  type="button"
+                  className="rail-add-btn"
+                  onClick={handleAddCustomService}
+                >
+                  <Icon icon="plus" size={13} />
+                  <span>{t("settings.railAddCustom")}</span>
+                </button>
+              </div>
+            </aside>
+
+            <main className="service-inspector">
+              {renderInspector()}
+              {activeId && (
+                <ServiceCacheBar
+                  count={cacheCounts[activeId] ?? 0}
+                  loading={cacheLoading}
+                  clearing={clearingCacheId === activeId}
+                  onClear={() => handleClearServiceCache(activeId)}
+                />
+              )}
+            </main>
+          </div>
+        )}
+
+        {topTab === TOP_TAB_WORDBOOK && (
+          <div className="ndt-workspace-shell is-single">
+            <main className="service-inspector is-standalone">{renderWordbookPanel()}</main>
+          </div>
+        )}
+
+        {topTab === TOP_TAB_OTHER && (
+          <div className="ndt-workspace-shell is-single">
+            <main className="service-inspector is-standalone">{renderOtherSettingsPanel()}</main>
+          </div>
+        )}
       </div>
     </div>
   );

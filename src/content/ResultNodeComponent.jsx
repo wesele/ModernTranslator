@@ -81,10 +81,6 @@ function o(e, t, n, s = "text") {
         }
   );
 }
-const i = {
-  visibility: "visible",
-};
-
 const PLACEHOLDER_SPLIT_RE = /\{\{\s*(\d+)\s*\}\}/g;
 const TRAILING_INCOMPLETE_PLACEHOLDER_RE = /\{\{?\s*\d*$/;
 
@@ -142,7 +138,6 @@ function Comp_A(e) {
       <>
         {"html" === t.type ? (
           <hcfy-result-content
-            style={i}
             ref={d}
             {...p}
             dangerouslySetInnerHTML={{
@@ -150,7 +145,7 @@ function Comp_A(e) {
             }}
           />
         ) : (
-          <hcfy-result-content style={i} ref={d} {...p}>
+          <hcfy-result-content ref={d} {...p}>
             {"value" in t ? (
               hasPlaceholders ? (
                 <RichTranslatedText
@@ -166,7 +161,7 @@ function Comp_A(e) {
             )}
           </hcfy-result-content>
         )}
-        <hcfy-result-actions style={i}>
+        <hcfy-result-actions>
           {"error" in t && <button onClick={n}>{tr("content.clickRetry")}</button>}
         </hcfy-result-actions>
       </>
@@ -185,19 +180,30 @@ class c {
         mode: "hide",
         comparison: {
           newLine: true,
+          layoutMode: "block",
         },
         editable: false,
         containerDisplay: "",
+        containerFlexDirection: "",
+        containerFlexWrap: "",
       }));
   }
   renderContainer() {
-    const isBlock = !!this.props.comparison.newLine;
+    const layoutMode =
+      this.props.comparison.layoutMode || (this.props.comparison.newLine ? "block" : "inline");
+    const isRuby = layoutMode === "ruby";
+    const isBlock = layoutMode === "block";
     const containerDisplay = this.props.containerDisplay || "";
+    const containerFlexDirection = this.props.containerFlexDirection || "";
+    const containerFlexWrap = this.props.containerFlexWrap || "";
+    const isFlexWrapRow =
+      containerDisplay.includes("flex") &&
+      !containerFlexDirection.startsWith("column") &&
+      containerFlexWrap !== "nowrap";
     const applyLayoutSpan = (active) => {
       this.container.style.gridColumn =
         active && isBlock && containerDisplay.includes("grid") ? "1 / -1" : "";
-      this.container.style.flexBasis =
-        active && isBlock && containerDisplay.includes("flex") ? "100%" : "";
+      this.container.style.flexBasis = active && isBlock && isFlexWrapRow ? "100%" : "";
     };
     switch (this.props.mode) {
       case "hide":
@@ -211,11 +217,15 @@ class c {
         applyLayoutSpan(true);
         break;
       case "comparison":
-        this.container.style.display = isBlock ? "block" : "inline";
+        this.container.style.display = isBlock || isRuby ? "block" : "inline";
         this.container.className =
           "__hcfy-result-comparison__ " +
-          (isBlock ? "__hcfy-result-comparison-block__" : "__hcfy-result-comparison-inline__");
-        applyLayoutSpan(true);
+          (isRuby
+            ? "__hcfy-result-comparison-ruby__"
+            : isBlock
+              ? "__hcfy-result-comparison-block__"
+              : "__hcfy-result-comparison-inline__");
+        applyLayoutSpan(!isRuby);
         break;
     }
   }

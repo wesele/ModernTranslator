@@ -58,13 +58,19 @@ import identity from "lodash/identity";
 import * as mod_18785 from "../services/translators/index.js";
 import _A_27429 from "eventemitter3";
 import * as mod_94903 from "./ParagraphTranslator.js";
-import * as mod_62337 from "./webpageTranslateDom.js";
-import * as mod_69675 from "../shared/storage/watchStorage.js";
+import {
+  computeViewportPriority,
+  compareViewportPriority,
+  isPlainTxtDocument as Ke,
+  TxtPageTranslator as qe,
+  WebpageTranslator as dt,
+} from "./webpageTranslateEngine.js";
 import contentPanelCss from "../styles/contentPanelCss.js";
 import classroomCss from "../styles/classroomCss.js";
 import * as mod_42631 from "../components/ShadowContainer.jsx";
 import { LanguageClassroomModal } from "./LanguageClassroomModal.jsx";
 import { mountBilibiliClassroomButton } from "./bilibiliClassroomButton.js";
+import { isRtlText } from "../shared/textScript.js";
 import {
   isLlmService,
   MAX_LLM_BATCH_BYTES,
@@ -1154,29 +1160,6 @@ const NATIVE_BATCH_APIS = new Set(["GoogleWeb", "Microsoft"]);
 const NATIVE_BATCH_MAX_ITEMS = 20;
 const NATIVE_BATCH_MAX_CHARS = 2500;
 
-function computeViewportPriority(target, rectOverride) {
-  const vh = window.innerHeight || document.documentElement.clientHeight || 800;
-  if (!(target instanceof Element) || !target.isConnected) {
-    return [3, Number.MAX_SAFE_INTEGER];
-  }
-  const rect = rectOverride || target.getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) {
-    return [3, Number.MAX_SAFE_INTEGER];
-  }
-  const inViewport = rect.bottom > 0 && rect.top < vh;
-  const isChrome = !!target.closest("nav, header, footer, aside");
-  const tier = (inViewport ? 0 : 2) + (isChrome ? 1 : 0);
-  const dist = inViewport
-    ? Math.max(0, rect.top)
-    : Math.abs((rect.top + rect.bottom) / 2 - vh / 2);
-  return [tier, dist];
-}
-
-function compareViewportPriority(a, b) {
-  if (a[0] !== b[0]) return a[0] - b[0];
-  return a[1] - b[1];
-}
-
 class Ve extends _A_27429 {
   stream = [];
   streamBytes = 0;
@@ -1621,579 +1604,6 @@ class Ve extends _A_27429 {
     }
   }
 }
-function Ke() {
-  const e = document.body.childNodes;
-  return 1 === e.length && e[0] instanceof HTMLPreElement;
-}
-class qe {
-  constructor(e, t = mod_94903.a.source, n) {
-    let s;
-    if (n) s = n;
-    else {
-      if (!Ke()) throw new TypeError(tr("content.notTxtError"));
-      s = document.body.firstElementChild;
-    }
-    ((this.preElement = s),
-      (this.showType = mod_94903.a.source),
-      (this.originText = s.textContent || ""),
-      (this.originParagraphs = this.originText.split(/\n{2,}/)),
-      (this.resultParagraphs = []),
-      (this.totalCount = 0),
-      (this.completedCount = 0),
-      this.originParagraphs.forEach((t, n) => {
-        const s = t.replace(/\n/g, " ").trim();
-        s
-          ? ((this.totalCount += 1),
-            (this.resultParagraphs[n] = tr("content.translatingWait")),
-            e(s, (partial) => {
-              if (!this.destroyed && null != partial) {
-                this.resultParagraphs[n] = partial;
-                this.renderResult();
-              }
-            }).then(
-              (e) => {
-                if (!this.destroyed) this.completedCount += 1;
-                ((this.resultParagraphs[n] = e || ""), this.renderResult());
-              },
-              () => {
-                if (!this.destroyed) this.completedCount += 1;
-              }
-            ))
-          : (this.resultParagraphs[n] = "");
-      }),
-      this.switchShowType(t));
-  }
-  getProgress() {
-    return {
-      completed: this.completedCount,
-      total: this.totalCount,
-    };
-  }
-  renderResult() {
-    switch (this.showType) {
-      case mod_94903.a.source:
-        this.preElement.textContent = this.originText;
-        break;
-      case mod_94903.a.result:
-        this.preElement.textContent = this.resultParagraphs.join("\n\n");
-        break;
-      case mod_94903.a.both:
-        this.preElement.textContent = this.originParagraphs.reduce(
-          (e, t, n) => (t.trim() ? e + t + tr("content.txtPrefix") + this.resultParagraphs[n] + "\n\n" : e),
-          ""
-        );
-    }
-  }
-  switchShowType(e) {
-    this.showType !== e && ((this.showType = e), this.renderResult());
-  }
-  destroy() {
-    (this.switchShowType(mod_94903.a.source), (this.destroyed = true));
-  }
-}
-class Xe {
-  constructor(e, t, n, s) {
-    ((this.rootNode = e),
-      (this.staticChildNodes = t),
-      (this.translateNodes = []),
-      (this.translateFn = n),
-      (this.options = s));
-  }
-  add(e, t) {
-    const { rootNode: n, staticChildNodes: s, translateNodes: r, translateFn: o } = this,
-      i = s.slice(e, t + 1),
-      a = new mod_94903.r(n, i, o, this.options);
-    return (r.push(a), a);
-  }
-  translate() {
-    this.translateNodes.forEach((e) => e.translate());
-  }
-  setOnlyChild() {
-    this.translateNodes[0]?.setOnlyChild();
-  }
-  switchShowType(e) {
-    this.translateNodes.forEach((t) => t.switchShowType(e));
-  }
-  destroy() {
-    this.translateNodes.forEach((e) => e.destroy());
-  }
-}
-const Ze = [
-    "base",
-    "head",
-    "link",
-    "meta",
-    "style",
-    "body",
-    "hr",
-    "pre",
-    "br",
-    "area",
-    "audio",
-    "img",
-    "map",
-    "track",
-    "video",
-    "embed",
-    "iframe",
-    "object",
-    "param",
-    "picture",
-    "portal",
-    "source",
-    "svg",
-    "math",
-    "canvas",
-    "noscript",
-    "script",
-    "input",
-    "meter",
-    "progress",
-    "textarea",
-    "select",
-  ],
-  Je = [
-    "article",
-    "aside",
-    "footer",
-    "header",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "h6",
-    "main",
-    "nav",
-    "section",
-    "blockquote",
-    "dd",
-    "div",
-    "dl",
-    "dt",
-    "figcaption",
-    "figure",
-    "li",
-    "ol",
-    "p",
-    "ul",
-    "details",
-    "dialog",
-    "menu",
-    "summary",
-    "form",
-    "table",
-    "thead",
-    "tbody",
-    "tr",
-    "th",
-    "td",
-    "center",
-    "label",
-  ].concat(Ze);
-function Ge(e) {
-  return e.nodeType === Node.ELEMENT_NODE;
-}
-function isInlineMathElement(e, getDisplay = (el) => window.getComputedStyle(el).display) {
-  const t = e.tagName.toLowerCase();
-  if ("math" !== t && "mjx-container" !== t) return false;
-  if ("block" === e.getAttribute("display") || "true" === e.getAttribute("display")) {
-    return false;
-  }
-  return "block" !== getDisplay(e);
-}
-function isFlexOrGridContainer(e, getDisplay = (el) => window.getComputedStyle(el).display) {
-  if (!(e instanceof Element)) return false;
-  const t = e.tagName.toLowerCase();
-  if ("a" === t || "button" === t || "button" === e.getAttribute("role")) return false;
-  const disp = getDisplay(e);
-  return "flex" === disp || "inline-flex" === disp || "grid" === disp || "inline-grid" === disp;
-}
-function Qe(e, getDisplay) {
-  if (isInlineMathElement(e, getDisplay)) return false;
-  const t = e.tagName.toLowerCase();
-  return Je.includes(t) || (t.includes("-") && "g-emoji" !== t);
-}
-function et(e) {
-  const t = e.tagName.toLowerCase();
-  return "button" === e.getAttribute("role") ? !Ze.includes(t) : "button" === t || "a" === t;
-}
-function tt(e, t, n = () => false, s, getDisplay = (el) => window.getComputedStyle(el).display) {
-  const r = {
-    element: e,
-    paragraphs: [],
-    children: [],
-  };
-  if (e instanceof Element && n(e)) return r;
-  if (e instanceof Element) {
-    const o = e.shadowRoot;
-    if (o) {
-      const e = tt(o, t, n, s, getDisplay);
-      r.children.push(e);
-    }
-  }
-  let o;
-  const i = Array.from(e.childNodes);
-  let a = false;
-  const l = i.filter((e) => {
-      if (e.nodeType === Node.TEXT_NODE) {
-        const t = !!e.nodeValue?.trim();
-        return (t && (a = true), t);
-      }
-      return e.nodeType === Node.ELEMENT_NODE;
-    }),
-    c = (e) => i.indexOf(l[e]),
-    containerIsFlexOrGrid = !a && isFlexOrGridContainer(e, getDisplay);
-  if (
-    (l.forEach((d, u) => {
-      if (
-        (null == o && (o = u),
-        Ge(d) &&
-          !isInlineMathElement(d, getDisplay) &&
-          (Qe(d, getDisplay) ||
-            containerIsFlexOrGrid ||
-            (function (e, t, n) {
-              const s = e[t];
-              if (!Ge(s)) return false;
-              const r = e[t - 1],
-                o = e[t + 1];
-              if (et(s) && !n) {
-                if (r && Ge(r) && et(r)) return true;
-                if (o && Ge(o) && et(o)) return true;
-              }
-              return r ? Ge(r) && Qe(r, getDisplay) : !o || (Ge(o) && Qe(o, getDisplay));
-            })(l, u, a)))
-      ) {
-        const a = u - 1;
-        if (a >= o) {
-          const n = c(o),
-            s = c(a);
-          (r.paragraphs.push([n, s]), t?.(e, i, n, s));
-        }
-        if (
-          ((o = undefined),
-          !(function (e) {
-            if (et(e)) return false;
-            const t = e.tagName.toLowerCase();
-            return Ze.includes(t);
-          })(d) && !n(d))
-        ) {
-          const e = tt(d, t, n, s, getDisplay);
-          r.children.push(e);
-        }
-      }
-    }),
-    null != o)
-  ) {
-    const n = l.length - 1,
-      s = c(o),
-      a = c(n);
-    (r.paragraphs.push([s, a]), t?.(e, i, s, a));
-  }
-  return (1 === r.paragraphs.length && 0 === r.children.length && s?.(r), r);
-}
-class nt {
-  text = document.title;
-  translateResult = "";
-  translating = false;
-  translated = false;
-  showType = mod_94903.a.source;
-  destroyed = false;
-  constructor(e) {
-    this.translateFn = e;
-  }
-  destroy() {
-    ((document.title = this.text), (this.destroyed = true));
-  }
-  switchShowType(e) {
-    if (!this.destroyed) {
-      switch (e) {
-        case mod_94903.a.both:
-          document.title = `${this.text} ~ ${this.translateResult}`;
-          break;
-        case mod_94903.a.source:
-          document.title = this.text;
-          break;
-        case mod_94903.a.result:
-          document.title = this.translateResult;
-      }
-      this.showType = e;
-    }
-  }
-  async translate() {
-    if (this.destroyed || !this.text || this.translating || this.translated) return;
-    let e;
-    ((this.translating = true),
-      (this.translateResult = tr("content.translatingShort")),
-      this.switchShowType(this.showType));
-    try {
-      e = await this.translateFn(this.text);
-    } catch (e) {
-      return (
-        (this.translating = false),
-        (this.translated = true),
-        (this.translateResult = tr("content.translateErrPrefix", { msg: e.message })),
-        void this.switchShowType(this.showType)
-      );
-    }
-    if (((this.translating = false), null == e)) return this.translate();
-    ((this.translated = true), (this.translateResult = e), this.switchShowType(this.showType));
-  }
-}
-const ot = {
-  STYLE_NONE: mod_62337.P9,
-  STYLE_DOTTED_CLASSIC: mod_62337.O,
-  STYLE_DOTTED: mod_62337.pb,
-  STYLE_WAVY: mod_62337.UU,
-  STYLE_LINE: mod_62337.Zi,
-  STYLE_BACKGROUND: mod_62337.dd,
-  STYLE_QUOTE: mod_62337.PD,
-};
-let it;
-function at() {
-  if (it) return;
-  ((it = document.createElement("style")),
-    (it.dataset.title = tr("content.styleNodeTitle")),
-    document.head.appendChild(it));
-  const e = pick(mod_16224.g2, [
-    "pageTrsResultStyleId",
-    "pageTrsResultStyleMainColor",
-    "pageTrsResultStyleTextColor",
-    "pageTrsResultStyleTextSize",
-    "pageTrsResultStyleTextWeight",
-    "pageTrsResultStyleCustom",
-  ]);
-  mod_69675.A(e, (t) => {
-    (t.pageTrsResultStyleId && (e.pageTrsResultStyleId = t.pageTrsResultStyleId),
-      undefined !== t.pageTrsResultStyleCustom &&
-        (e.pageTrsResultStyleCustom = t.pageTrsResultStyleCustom),
-      undefined !== t.pageTrsResultStyleMainColor &&
-        (e.pageTrsResultStyleMainColor = t.pageTrsResultStyleMainColor),
-      undefined !== t.pageTrsResultStyleTextColor &&
-        (e.pageTrsResultStyleTextColor = t.pageTrsResultStyleTextColor),
-      undefined !== t.pageTrsResultStyleTextSize &&
-        (e.pageTrsResultStyleTextSize = t.pageTrsResultStyleTextSize),
-      undefined !== t.pageTrsResultStyleTextWeight &&
-        (e.pageTrsResultStyleTextWeight = t.pageTrsResultStyleTextWeight),
-      (function () {
-        if (!it) return;
-        let t = "hcfy-result{";
-        (e.pageTrsResultStyleMainColor &&
-          (t += `--hcfy-result-main-color:${e.pageTrsResultStyleMainColor};`),
-          e.pageTrsResultStyleTextColor &&
-            (t += `--hcfy-result-text-color:${e.pageTrsResultStyleTextColor};`),
-          e.pageTrsResultStyleTextSize &&
-            (t += `--hcfy-result-text-size:${e.pageTrsResultStyleTextSize}em;`),
-          e.pageTrsResultStyleTextWeight &&
-            (t += `--hcfy-result-text-weight:${e.pageTrsResultStyleTextWeight};`),
-          (t += "}\nhcfy-result.__hcfy-result-comparison-block__{margin-top:0.4em;margin-bottom:0.2em;text-indent:0;}\n"),
-          "STYLE_CUSTOM" === e.pageTrsResultStyleId
-            ? (t += e.pageTrsResultStyleCustom)
-            : (t += ot[e.pageTrsResultStyleId] || ""),
-          (it.textContent = t));
-      })());
-  });
-}
-function lt(e) {
-  const t = e.nodeName.toLowerCase();
-  return "body" !== t && "html" !== t;
-}
-function ct(e) {
-  return Array.prototype.some.call(e.childNodes, (e) => "hcfy-result" === e.nodeName.toLowerCase());
-}
-function shouldSkipElement(el, getDisplay = (node) => window.getComputedStyle(node).display) {
-  if (!(el instanceof Element)) return false;
-  const tag = el.tagName.toLowerCase();
-  if ("hcfy-result" === tag || ct(el)) return true;
-  if ("1" === el.getAttribute("data-hcfy-ignore")) return true;
-  if (el.hidden || "no" === el.getAttribute("translate") || el.classList?.contains("notranslate")) {
-    return true;
-  }
-  return "none" === getDisplay(el);
-}
-class dt {
-  groups = new Map();
-  destroyed = false;
-  titleTimer = null;
-  mutationObserver = new MutationObserver((e) => {
-    e.forEach((e) => {
-      (e.addedNodes.forEach((e) => {
-        Ge(e) &&
-          e.isConnected &&
-          !(function (e, t) {
-            let n = e;
-            do {
-              if (t(n)) return true;
-              n = n.parentElement;
-            } while (n && lt(n));
-            return false;
-          })(e, (e) => {
-            const t = e.tagName.toLowerCase();
-            return (
-              "pre" === t ||
-              "hcfy-result" === t ||
-              "1" === e.getAttribute("data-hcfy-ignore") ||
-              !!ct(e) ||
-              undefined
-            );
-          }) &&
-          this.analysis(e);
-      }),
-        e.removedNodes.forEach((e) => {
-          if (Ge(e)) {
-            const t = (e) => {
-              (this.groups.delete(e), Array.prototype.forEach.call(e.children, t));
-            };
-            t(e);
-          }
-        }));
-    });
-  });
-  intersectionObserver = new IntersectionObserver(
-    (entries) => {
-      const visibleEntries = entries
-        .filter((entry) => entry.isIntersecting)
-        .map((entry) => ({
-          entry,
-          score: computeViewportPriority(entry.target, entry.boundingClientRect),
-        }))
-        .sort((a, b) => compareViewportPriority(a.score, b.score));
-      for (const { entry } of visibleEntries) {
-        const group = this.groups.get(entry.target);
-        if (group) group.translate();
-      }
-    },
-    {
-      rootMargin: `${Math.min(200, Math.round((window.innerHeight || 800) * 0.2))}px 0px`,
-    }
-  );
-  constructor(e, t = mod_94903.a.both, n = document.body, s) {
-    (at(),
-      (this.options = s),
-      (this.translateFn = e),
-      (this.showType = t),
-      (this.titleNode = new nt(e)),
-      this.titleNode.switchShowType(t),
-      this.analysis(n));
-    const r = document.getElementsByTagName("sr-read")[0];
-    (r && this.analysis(r),
-      this.mutationObserver.observe(n, {
-        childList: true,
-        subtree: true,
-      }));
-    if ((window.scrollY || document.documentElement.scrollTop || 0) < 100) {
-      this.titleNode.translate();
-    } else {
-      this.titleTimer = setTimeout(() => {
-        this.titleTimer = null;
-        if (!this.destroyed) {
-          this.titleNode.translate();
-        }
-      }, 400);
-    }
-  }
-  analysis(e) {
-    const { groups: t, translateFn: n } = this;
-    const displayCache = new Map();
-    const getDisplay = (el) => {
-      let disp = displayCache.get(el);
-      if (disp === undefined) {
-        disp = window.getComputedStyle(el).display;
-        displayCache.set(el, disp);
-      }
-      return disp;
-    };
-    const pendingNodes = [];
-    const pendingOnlyChild = [];
-    tt(
-      e,
-      (rootNode, childNodesSnapshot, startIdx, endIdx) => {
-        pendingNodes.push({ rootNode, childNodesSnapshot, startIdx, endIdx });
-      },
-      (el) => shouldSkipElement(el, getDisplay),
-      (entry) => {
-        pendingOnlyChild.push(entry);
-      },
-      getDisplay
-    );
-
-    const rootStyleCache = new Map();
-    for (const { rootNode } of pendingNodes) {
-      if (!rootStyleCache.has(rootNode)) {
-        let containerDisplay = "";
-        let isInlineSpan = false;
-        if (rootNode instanceof Element) {
-          containerDisplay = getDisplay(rootNode);
-          isInlineSpan =
-            "span" === rootNode.nodeName.toLowerCase() && containerDisplay.startsWith("inline");
-        }
-        rootStyleCache.set(rootNode, { containerDisplay, isInlineSpan });
-      }
-    }
-
-    for (const { rootNode, childNodesSnapshot, startIdx, endIdx } of pendingNodes) {
-      let i = t.get(rootNode);
-      if (!i) {
-        const styleMeta = rootStyleCache.get(rootNode);
-        i = new Xe(rootNode, childNodesSnapshot, n, {
-          ...this.options,
-          containerDisplay: styleMeta?.containerDisplay || "",
-          isInlineSpan: !!styleMeta?.isInlineSpan,
-        });
-        t.set(rootNode, i);
-        if (rootNode instanceof Element) {
-          this.intersectionObserver.observe(rootNode);
-        }
-      }
-      i.add(startIdx, endIdx).switchShowType(this.showType);
-    }
-
-    for (const entry of pendingOnlyChild) {
-      const group = t.get(entry.element);
-      group && group.setOnlyChild();
-    }
-  }
-  switchShowType(e) {
-    ((this.showType = e), this.titleNode.switchShowType(e));
-    for (const t of this.groups.values()) t.switchShowType(e);
-  }
-  destroy() {
-    this.destroyed = true;
-    if (this.titleTimer) {
-      clearTimeout(this.titleTimer);
-      this.titleTimer = null;
-    }
-    (this.intersectionObserver.disconnect(),
-      this.mutationObserver.disconnect(),
-      this.titleNode.destroy());
-    for (const e of this.groups.values()) e.destroy();
-  }
-  getProgress() {
-    let total = 0;
-    let completed = 0;
-    if (this.titleNode && !this.titleNode.destroyed && this.titleNode.text?.trim()) {
-      total += 1;
-      if (this.titleNode.translated) completed += 1;
-    }
-    for (const group of this.groups.values()) {
-      for (const node of group.translateNodes) {
-        if (node.destroyed) continue;
-        if (node.inited) {
-          if (!node.valid) continue;
-          total += 1;
-          if (node.translated) completed += 1;
-        } else {
-          const hasText = node.sourceNodes.some((src) => {
-            const txt = src.textContent?.trim();
-            return txt && !/^[0-9\s.,\-_#:()[\]!•+~@$%^&*\n/`]+$/.test(txt);
-          });
-          if (hasText) total += 1;
-        }
-      }
-    }
-    return { completed, total };
-  }
-}
 const ut = pick(mod_16224.g2, ["pageTrsEditable"]);
 const Ct = [
     {
@@ -2520,6 +1930,8 @@ const on = {
     "charsLimit",
     "pageTrsPanelPos",
     "pinEnhance",
+    "bilibiliVideoIntegration",
+    "youtubeVideoIntegration",
   ]),
 };
 function an(e, t, s) {
@@ -2900,9 +2312,11 @@ function SubtitleSidePanel({ open, state, onRefresh, onLoadTrack, onClose }) {
                   onChange={() => handleToggleTrack(track.key)}
                 />
                 <span>
-                  {loadingTrackKeys.has(track.key)
-                    ? `${track.lanDoc || track.lan || "字幕"}...`
-                    : track.lanDoc || track.lan || "字幕"}
+                  <bdi dir="auto">
+                    {loadingTrackKeys.has(track.key)
+                      ? `${track.lanDoc || track.lan || "字幕"}...`
+                      : track.lanDoc || track.lan || "字幕"}
+                  </bdi>
                 </span>
               </label>
             );
@@ -2984,7 +2398,14 @@ function SubtitleSidePanel({ open, state, onRefresh, onLoadTrack, onClose }) {
                                 {item.lan || item.lanDoc}
                               </span>
                             )}
-                            <span>{item.content}</span>
+                            <span
+                              className={`ndt-sub-line-text${
+                                isRtlText(item.content) ? " is-rtl" : ""
+                              }`}
+                              dir="auto"
+                            >
+                              {item.content}
+                            </span>
                           </div>
                         ))}
                       </div>
@@ -3201,16 +2622,22 @@ function Comp_Dn(e) {
     }
   }, []);
   classroomOpenRef.current = classroomOpen;
+  const storageLoaded = Boolean(n);
+  const bilibiliVideoIntegration = n?.bilibiliVideoIntegration !== false;
+  const youtubeVideoIntegration = n?.youtubeVideoIntegration !== false;
   React.useEffect(() => {
+    if (!storageLoaded) return undefined;
     return mountBilibiliClassroomButton(
       () => {
         setClassroomOpen(true);
       },
       {
         isModalOpen: () => classroomOpenRef.current,
+        bilibiliEnabled: bilibiliVideoIntegration,
+        youtubeEnabled: youtubeVideoIntegration,
       }
     );
-  }, []);
+  }, [storageLoaded, bilibiliVideoIntegration, youtubeVideoIntegration]);
 
   (React.useEffect(
     () =>
