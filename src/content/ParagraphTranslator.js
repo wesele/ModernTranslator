@@ -1,4 +1,5 @@
 import * as mod_62337 from "./webpageTranslateDom.js";
+import createDebug from "debug";
 import _A_97519 from "dompurify";
 import { a as i } from "../shared/constants/showType.js";
 import {
@@ -7,6 +8,7 @@ import {
   decideBilingualPlacement,
 } from "./bilingualLayoutEngine.js";
 const { sanitize: o } = _A_97519;
+const paraLog = createDebug("ndt:paragraphTranslator");
 
 const INVALID_ONLY_PUNCT_RE = /^[0-9\s.,\-_#:()[\]!•+~@$%^&*\n/`]+$/;
 const DOTFILE_RE = /^\.[a-z0-9._-]+$/i;
@@ -546,10 +548,11 @@ class a {
     if (this.sourceRemoved) return;
     const { rootNode: e, sourceNodes: t } = this;
     t.forEach((node) => {
+      if (!node || node.parentNode !== e) return;
       try {
         e.removeChild(node);
       } catch (err) {
-        console.error("移除源节点失败：", err);
+        paraLog("移除源节点失败：%o", err);
       }
     });
     this.sourceRemoved = true;
@@ -558,20 +561,24 @@ class a {
     if (!this.sourceRemoved) return;
     const { rootNode: e } = this;
     const t = this.#e.container;
+    const refNode = t && t.parentNode === e ? t : null;
     this.sourceNodes.forEach((n) => {
+      if (!n) return;
       try {
-        e.insertBefore(n, t);
+        e.insertBefore(n, refNode);
       } catch (err) {
-        console.error("插入源节点失败：", err);
+        paraLog("插入源节点失败：%o", err);
       }
     });
     this.sourceRemoved = false;
   }
   removeResult() {
+    const container = this.#e.container;
+    if (!container || container.parentNode !== this.rootNode) return;
     try {
-      this.rootNode.removeChild(this.#e.container);
+      this.rootNode.removeChild(container);
     } catch (err) {
-      console.error("移除翻译结果失败：", err);
+      paraLog("移除翻译结果失败：%o", err);
     }
   }
   switchShowType(e) {

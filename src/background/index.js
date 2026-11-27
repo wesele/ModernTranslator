@@ -18,7 +18,11 @@ import { _ as abortTimeout } from "../shared/utils/abortTimeout.js";
 import * as errors from "../shared/errors/index.js";
 import { registerLlmBatchStreamHandler } from "./llmBatchStream.js";
 import { runWithLlmConcurrency } from "./llmConcurrency.js";
-import { extractApiErrorMessage, isLikelyApiErrorText } from "../shared/llmErrorUtils.js";
+import {
+  extractApiErrorMessage,
+  isLikelyApiErrorText,
+  isRateLimitOrOverload,
+} from "../shared/llmErrorUtils.js";
 import {
   DEFAULT_CUSTOM_LLM_MAX_CONCURRENCY,
   DEFAULT_OFFICIAL_LLM_MAX_CONCURRENCY,
@@ -150,28 +154,38 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const tabInfo = { id: sender.tab.id, windowId: sender.tab.windowId };
   switch (msg.__aftrAction__) {
     case "getMode":
-      autoModeStore.getMode(tabInfo).then((res) => sendResponse(res));
+      autoModeStore
+        .getMode(tabInfo)
+        .then((res) => sendResponse(res))
+        .catch(() => sendResponse("close"));
       return true;
     case "setMode":
-      autoModeStore.setMode(tabInfo, msg.__aftrPayload__).then(() => sendResponse());
+      autoModeStore
+        .setMode(tabInfo, msg.__aftrPayload__)
+        .then(() => sendResponse())
+        .catch(() => sendResponse());
       return true;
   }
 });
 
 autoModeStore.on("change-other-tabs-to", async (tabInfo, mode) => {
   aftrLog("通知同窗口其他标签页更新自动模式：%s", mode);
-  const tabs = await chrome.tabs.query({ windowId: tabInfo.windowId });
-  tabs.forEach((tab) => {
-    if (tab.id != null && tab.id !== tabInfo.id) {
-      chrome.tabs
-        .sendMessage(tab.id, {
-          __aftrMessage__: true,
-          __aftrAction__: "setMode",
-          __aftrPayload__: mode,
-        })
-        .catch(noop);
-    }
-  });
+  try {
+    const tabs = await chrome.tabs.query({ windowId: tabInfo.windowId });
+    tabs.forEach((tab) => {
+      if (tab.id != null && tab.id !== tabInfo.id) {
+        chrome.tabs
+          .sendMessage(tab.id, {
+            __aftrMessage__: true,
+            __aftrAction__: "setMode",
+            __aftrPayload__: mode,
+          })
+          .catch(noop);
+      }
+    });
+  } catch {
+    // ignore closed window or restricted tabs
+  }
 });
 
 // Direct OpenAI-compatible request helper
@@ -182,6 +196,7 @@ async function requestOpenAIChatDirect({
   content,
   serviceName,
   sourceText = "",
+  isOfficial = false,
 }) {
   const headers = { "Content-Type": "application/json" };
   const trimmedKey = String(apiKey || "").trim();
@@ -221,6 +236,11 @@ async function requestOpenAIChatDirect({
       }
     } catch {
       // ignore read failure
+    }
+    if (isOfficial && isRateLimitOrOverload(res.status, detail)) {
+      throw new errors.Fw(t("error.officialBusy", { detail: String(detail).slice(0, 160) }), {
+        type: errors.VC.API_SERVER_ERROR,
+      });
     }
     throw new errors.Fw(t("error.serverReturned", { name: serviceName, detail }), {
       type: res.status === 401 || res.status === 403 ? errors.VC.NEED_KEY : errors.VC.API_SERVER_ERROR,
@@ -317,6 +337,7 @@ const officialLlmTranslator = new (class extends TranslatorBase {
           content,
           serviceName: getServiceDisplayName(ServiceId.OfficialLLM),
           sourceText: req.text,
+          isOfficial: true,
         })
     );
   }

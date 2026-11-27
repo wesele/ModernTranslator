@@ -5,6 +5,8 @@ import * as mod_34843 from "../../../shared/utils/index.js";
 import * as mod_4645 from "../../../shared/utils/fetchError.js";
 import * as mod_51964 from "../../../shared/errors/handleHttpError.js";
 import { t as tr } from "../../../shared/i18n/index.js";
+import createDebug from "debug";
+const googleLog = createDebug("translator:google");
 const r = JSON.parse(
   '{"中文(简体)":"zh-CN","英语":"en","日语":"ja","泰语":"th","西班牙语":"es","阿拉伯语":"ar","法语":"fr","韩语":"ko","俄语":"ru","德语":"de","葡萄牙语":"pt","意大利语":"it","希腊语":"el","荷兰语":"nl","波兰语":"pl","芬兰语":"fi","捷克语":"cs","保加利亚语":"bg","丹麦语":"da","爱沙尼亚语":"et","匈牙利语":"hu","罗马尼亚语":"ro","斯洛文尼亚语":"sl","瑞典语":"sv","越南语":"vi","中文(繁体)":"zh-TW","南非荷兰语":"af","阿尔巴尼亚语":"sq","阿姆哈拉语":"am","亚美尼亚语":"hy","阿塞拜疆语":"az","巴斯克语":"eu","白俄罗斯语":"be","孟加拉语":"bn","波斯尼亚语":"bs","缅甸语":"my","加泰罗尼亚语":"ca","宿务语":"ceb","克罗地亚语":"hr","世界语":"eo","菲律宾语":"tl","加利西亚语":"gl","格鲁吉亚语":"ka","古吉拉特语":"gu","豪萨语":"ha","希伯来语":"iw","印地语":"hi","冰岛语":"is","伊博语":"ig","印尼语":"id","爱尔兰语":"ga","卡纳达语":"kn","哈萨克语":"kk","库尔德语":"ku","老挝语":"lo","拉丁语":"la","拉脱维亚语":"lv","立陶宛语":"lt","卢森堡语":"lb","马其顿语":"mk","马尔加什语":"mg","马来语":"ms","马拉雅拉姆语":"ml","马耳他语":"mt","马拉地语":"mr","尼泊尔语":"ne","波斯语":"fa","塞尔维亚语":"sr","僧伽罗语":"si","斯洛伐克语":"sk","索马里语":"so","斯瓦希里语":"sw","塔吉克语":"tg","泰米尔语":"ta","鞑靼语":"tt","泰卢固语":"te","土耳其语":"tr","土库曼语":"tk","乌克兰语":"uk","乌尔都语":"ur","乌兹别克语":"uz","吉尔吉斯语":"ky","普什图语":"ps","高棉语":"km","海地克里奥尔语":"ht","旁遮普语":"pa","齐切瓦语":"ny","科西嘉语":"co","夏威夷语":"haw","爪哇语":"jw","卢旺达语":"rw","毛利语":"mi","挪威语":"no","奥里亚语":"or","萨摩亚语":"sm","修纳语":"sn","信德语":"sd","威尔士语":"cy","意第绪语":"yi","约鲁巴语":"yo","祖鲁语":"zu","弗里西语":"fy","蒙古语":"mn","苗语":"hmn","南非科萨语":"xh","塞索托语":"st","苏格兰盖尔语":"gd","维吾尔语":"ug","印尼巽他语":"su"}'
 );
@@ -314,7 +316,7 @@ class R extends mod_34047.c {
         this.mirror
       );
     } catch (e) {
-      console.error("从 Google 翻译接口获取结果失败：", e);
+      googleLog("从 Google 翻译接口获取结果失败：%o", e);
       try {
         return await x(
           t,
@@ -326,7 +328,7 @@ class R extends mod_34047.c {
           this.mirror
         );
       } catch (err2) {
-        console.error("从 Google webapp 接口获取结果失败，尝试备用接口：", err2);
+        googleLog("从 Google webapp 接口获取结果失败，尝试备用接口：%o", err2);
         try {
           return await translateGoogleChromeExt(
             t,
@@ -365,7 +367,7 @@ class R extends mod_34047.c {
       try {
         !s.phonetic && s.from && (s.ttsURI = this.getTTS(n, s.from));
       } catch (e) {
-        console.error("解析 Google 翻译接口结果时出错：", e);
+        googleLog("解析 Google 翻译接口结果时出错：%o", e);
       }
     }
     return s;
@@ -373,9 +375,12 @@ class R extends mod_34047.c {
   getTTS(e, t) {
     const n = this.convertToCustom(t);
     if (!n)
-      throw new mod_29842.Fw(`${this.service.name}不支持朗读${t}。`, {
-        type: mod_29842.VC.UNSUPPORTED_LANGUAGE,
-      });
+      throw new mod_29842.Fw(
+        tr("error.ttsLangUnsupported", { name: tr("service.google"), lang: t }),
+        {
+          type: mod_29842.VC.UNSUPPORTED_LANGUAGE,
+        }
+      );
     let text = String(e || "")
       .replace(/[\u200E\u200F\u061C\u202A-\u202E\u2066-\u2069]/g, "")
       .replace(/\s+/g, " ")

@@ -1,5 +1,6 @@
 import * as React from "react";
 import { normalizeTextForMatch } from "./textScript.js";
+import { t } from "./i18n/index.js";
 
 export const WORDBOOK_STORAGE_KEY = "ndtVocabularyBook";
 
@@ -345,7 +346,7 @@ export function exportWordbookToTsv(items = []) {
     const ex = item.examples?.[0] || {};
     return [
       item.term,
-      item.type === "phrase" ? "短语" : "单词",
+      item.type === "phrase" ? t("wordbook.tsvTypePhrase") : t("wordbook.tsvTypeWord"),
       item.phonetic,
       item.pos,
       item.level,
@@ -356,7 +357,7 @@ export function exportWordbookToTsv(items = []) {
       item.videoQuote || "",
       item.languageLabel || item.language || "",
       item.sourceTitle || "",
-      item.mastered ? "已掌握" : "学习中",
+      item.mastered ? t("wordbook.statusMastered") : t("wordbook.statusLearning"),
     ]
       .map(escapeTsvCell)
       .join("\t");

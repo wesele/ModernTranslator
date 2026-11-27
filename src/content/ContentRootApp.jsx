@@ -740,13 +740,18 @@ const ae = pick(
         _.secondDestinationLatestSource &&
           Ae !== U &&
           U &&
-          mod_66690.o(U).then((e) => {
-            null != e &&
-              "中文(简体)" !== e &&
-              chrome.storage.local.set({
-                latestSource: e,
-              });
-          });
+          mod_66690
+            .o(U)
+            .then((e) => {
+              null != e &&
+                "中文(简体)" !== e &&
+                chrome.storage.local
+                  .set({
+                    latestSource: e,
+                  })
+                  .catch(() => {});
+            })
+            .catch(() => {});
       }, [U, _.secondDestinationLatestSource]),
       React.useImperativeHandle(
         t,
@@ -1634,17 +1639,29 @@ class Ot extends _A_27429 {
       }));
   }
   getMode() {
-    return chrome.runtime.sendMessage({
-      __aftrMessage__: true,
-      __aftrAction__: "getMode",
-    });
+    try {
+      return chrome.runtime
+        .sendMessage({
+          __aftrMessage__: true,
+          __aftrAction__: "getMode",
+        })
+        .catch(() => "close");
+    } catch {
+      return Promise.resolve("close");
+    }
   }
   setMode(e) {
-    return chrome.runtime.sendMessage({
-      __aftrMessage__: true,
-      __aftrAction__: "setMode",
-      __aftrPayload__: e,
-    });
+    try {
+      return chrome.runtime
+        .sendMessage({
+          __aftrMessage__: true,
+          __aftrAction__: "setMode",
+          __aftrPayload__: e,
+        })
+        .catch(() => {});
+    } catch {
+      return Promise.resolve();
+    }
   }
 }
 const zt = new Ot();
@@ -1703,9 +1720,11 @@ function Bt(e) {
     [p, h] = React.useState(mod_94903.a.both),
     [f, m] = React.useState(""),
     g = React.useCallback((e) => {
-      (chrome.storage.local.set({
-        pageTrsType: e,
-      }),
+      (chrome.storage.local
+        .set({
+          pageTrsType: e,
+        })
+        .catch(() => {}),
         h(e),
         d.current
           ? d.current.switchShowType(e)
@@ -1894,9 +1913,12 @@ function Bt(e) {
             if (e < 0) return;
             let t = e + 1;
             t >= Ct.length
-              ? chrome.storage.local.get(Dt).then(({ pageTrsJumpTwo: e }) => {
-                  ((t = e ? 1 : 0), g(Ct[t].value));
-                })
+              ? chrome.storage.local
+                  .get(Dt)
+                  .then(({ pageTrsJumpTwo: e }) => {
+                    ((t = e ? 1 : 0), g(Ct[t].value));
+                  })
+                  .catch(() => {})
               : g(Ct[t].value);
             break;
           }
@@ -2016,14 +2038,31 @@ const cn = new (class {
       if (!this.activeFrameIndex) return void e(undefined);
       if (this.isTopFrameActivated()) return void e(this.getInfoSync());
       const t = uniqueId();
-      (this.msgMap.set(t, e),
-        this.messagePassingBetweenFrames.tell(
+      const timeoutId = setTimeout(() => {
+        if (this.msgMap.has(t)) {
+          this.msgMap.delete(t);
+          e(undefined);
+        }
+      }, 500);
+      this.msgMap.set(t, (val) => {
+        clearTimeout(timeoutId);
+        e(val);
+      });
+      const targetPath = [...this.activeFrameIndex].reverse().slice(1);
+      if (!targetPath.length) {
+        clearTimeout(timeoutId);
+        this.msgMap.delete(t);
+        return void e(this.getInfoSync());
+      }
+      this.messagePassingBetweenFrames
+        .tell(
           {
             type: "HCFY_SELECTION_EVENT_REPORT_INFO_PROACTIVE",
             mid: t,
           },
-          this.isTopFrameActivated() ? "top" : this.activeFrameIndex.reverse().slice(1)
-        ));
+          targetPath
+        )
+        .catch(() => {});
     });
   }
   clearSelectionData() {
@@ -2074,7 +2113,7 @@ function detectDomVideoSubtitles() {
         .sort((a, b) => a.from - b.from);
       if (cues.length === 0) return;
       const lan = track.language || "";
-      const lanDoc = track.label || lan || `HTML5 轨道 ${tracks.length + 1}`;
+      const lanDoc = track.label || lan || tr("subtitle.html5Track", { n: tracks.length + 1 });
       tracks.push({
         key: `dom-${tracks.length}-${lan || idx}`,
         id: `dom-${tracks.length}`,
@@ -2102,6 +2141,7 @@ function detectDomVideoSubtitles() {
 }
 
 function SubtitleSidePanel({ open, state, onRefresh, onLoadTrack, onClose }) {
+  const { t: trSub } = useI18n();
   const { loading, data, error } = state || {};
   const tracks = Array.isArray(data?.tracks) ? data.tracks : [];
   const [selectedTrackKeys, setSelectedTrackKeys] = React.useState([]);
@@ -2258,11 +2298,11 @@ function SubtitleSidePanel({ open, state, onRefresh, onLoadTrack, onClose }) {
   const showLangTags = selectedTrackKeys.length > 1;
 
   return (
-    <aside id="ndt-subtitle-panel" aria-label="视频字幕流窗口">
+    <aside id="ndt-subtitle-panel" aria-label={trSub("subtitle.panelAria")}>
       <div className="ndt-sub-header">
         <div className="ndt-sub-header-left">
-          <span className="ndt-sub-title" title={data?.videoTitle || "字幕流"}>
-            {data?.videoTitle ? data.videoTitle : "字幕流"}
+          <span className="ndt-sub-title" title={data?.videoTitle || trSub("subtitle.defaultTitle")}>
+            {data?.videoTitle ? data.videoTitle : trSub("subtitle.defaultTitle")}
           </span>
           <span className="ndt-sub-clock">{formatSubtitleTime(videoTime)}</span>
         </div>
@@ -2276,7 +2316,7 @@ function SubtitleSidePanel({ open, state, onRefresh, onLoadTrack, onClose }) {
                 scrollActiveToFifthRow(activeIndex, "smooth");
               }}
             >
-              回到第5行
+              {trSub("subtitle.backToFifth")}
             </button>
           )}
           <AnchorButton
@@ -2284,22 +2324,23 @@ function SubtitleSidePanel({ open, state, onRefresh, onLoadTrack, onClose }) {
             onClick={onRefresh}
             small
             minimal
-            title="刷新字幕"
+            title={trSub("subtitle.refreshTitle")}
           />
           <AnchorButton
             icon={<Icon icon="cross" size={14} />}
             onClick={onClose}
             small
             minimal
-            title="关闭"
+            title={trSub("subtitle.closeTitle")}
           />
         </div>
       </div>
 
       {!loading && !error && data?.ok && tracks.length > 0 && (
-        <div className="ndt-sub-tracks" aria-label="字幕语言选择">
+        <div className="ndt-sub-tracks" aria-label={trSub("subtitle.trackSelectAria")}>
           {tracks.map((track) => {
             const checked = selectedTrackKeys.includes(track.key);
+            const fallbackTrackName = trSub("subtitle.defaultTrackName");
             return (
               <label
                 key={track.key}
@@ -2314,8 +2355,8 @@ function SubtitleSidePanel({ open, state, onRefresh, onLoadTrack, onClose }) {
                 <span>
                   <bdi dir="auto">
                     {loadingTrackKeys.has(track.key)
-                      ? `${track.lanDoc || track.lan || "字幕"}...`
-                      : track.lanDoc || track.lan || "字幕"}
+                      ? `${track.lanDoc || track.lan || fallbackTrackName}...`
+                      : track.lanDoc || track.lan || fallbackTrackName}
                   </bdi>
                 </span>
               </label>
@@ -2325,24 +2366,22 @@ function SubtitleSidePanel({ open, state, onRefresh, onLoadTrack, onClose }) {
       )}
 
       <div className="ndt-sub-body">
-        {loading && <div className="ndt-sub-hint">正在探测当前视频字幕...</div>}
+        {loading && <div className="ndt-sub-hint">{trSub("subtitle.detecting")}</div>}
         {!loading && error && <div className="ndt-sub-error">{error}</div>}
         {!loading && !error && data?.ok && (
           <>
             {data.partial && data.rateLimited ? (
-              <div className="ndt-sub-hint">
-                YouTube 字幕接口当前触发了频率限制（HTTP 429），请等待片刻后点击右上角刷新重试。
-              </div>
+              <div className="ndt-sub-hint">{trSub("subtitle.ytRateLimited")}</div>
             ) : data.partial && data.needLoginSubtitle ? (
               <div className="ndt-sub-hint">
-                已探测到 {tracks.length} 条字幕轨，但当前 B 站未登录（need_login_subtitle=true），B 站接口未返回字幕正文 URL；登录后点击刷新即可显示多语言字幕流。
+                {trSub("subtitle.biliNeedLoginPartial", { count: tracks.length })}
               </div>
             ) : selectedTrackKeys.length === 0 ? (
-              <div className="ndt-sub-hint">请在顶部勾选至少一条字幕以显示字幕流。</div>
+              <div className="ndt-sub-hint">{trSub("subtitle.selectAtLeastOne")}</div>
             ) : loadingTrackKeys.size > 0 && rows.length === 0 ? (
-              <div className="ndt-sub-hint">正在加载所选字幕轨道...</div>
+              <div className="ndt-sub-hint">{trSub("subtitle.loadingSelectedTrack")}</div>
             ) : rows.length === 0 ? (
-              <div className="ndt-sub-hint">所选字幕轨道内暂无字幕内容。</div>
+              <div className="ndt-sub-hint">{trSub("subtitle.emptySelectedTrack")}</div>
             ) : (
               <div
                 ref={streamRef}
@@ -2382,13 +2421,17 @@ function SubtitleSidePanel({ open, state, onRefresh, onLoadTrack, onClose }) {
                       }}
                       className={`ndt-sub-row ${statusClass}`}
                       onClick={() => handleSeekToRow(row)}
-                      title="点击跳转到该句视频时间"
+                      title={trSub("subtitle.clickToSeek")}
                     >
                       <div className="ndt-sub-row-head">
                         <span className="ndt-sub-row-time">
                           {formatSubtitleTime(row.from, true)} - {formatSubtitleTime(row.to, true)}
                         </span>
-                        {isActive && <span className="ndt-sub-row-badge">当前 · 第5行</span>}
+                        {isActive && (
+                          <span className="ndt-sub-row-badge">
+                            {trSub("subtitle.activeRowBadge")}
+                          </span>
+                        )}
                       </div>
                       <div className="ndt-sub-lines">
                         {row.items.map((item) => (
@@ -2420,19 +2463,15 @@ function SubtitleSidePanel({ open, state, onRefresh, onLoadTrack, onClose }) {
         {!loading && !error && data && !data.ok && (
           <div className="ndt-sub-hint">
             {(data.reason === "NOT_BILIBILI" || data.reason === "NOT_SUPPORTED_VIDEO_SITE") &&
-              "当前页面不是 B 站或 YouTube 视频页，且未检测到 HTML5 视频字幕轨。"}
-            {data.reason === "NOT_BILIBILI_VIDEO" &&
-              "当前在 B 站页面，但未识别到具体视频 BV/AV 号，请打开视频播放页后重试。"}
-            {data.reason === "NOT_YOUTUBE_VIDEO" &&
-              "当前在 YouTube 页面，但未识别到具体视频播放页，请打开视频后重试。"}
-            {data.reason === "NEED_LOGIN" &&
-              "当前 B 站未登录，播放器接口返回 need_login_subtitle=true，请先登录 B 站后再试。"}
-            {data.reason === "RATE_LIMITED" &&
-              "YouTube 字幕接口当前触发了频率限制（HTTP 429），请等待片刻后点击刷新重试。"}
+              trSub("subtitle.notVideoSite")}
+            {data.reason === "NOT_BILIBILI_VIDEO" && trSub("subtitle.notBiliVideo")}
+            {data.reason === "NOT_YOUTUBE_VIDEO" && trSub("subtitle.notYtVideo")}
+            {data.reason === "NEED_LOGIN" && trSub("subtitle.biliNeedLogin")}
+            {data.reason === "RATE_LIMITED" && trSub("subtitle.ytRateLimitedSimple")}
             {data.reason === "NO_SUBTITLE" &&
               (data.platform === "youtube"
-                ? "当前 YouTube 视频未检测到可用字幕。"
-                : "当前 B 站视频未检测到 CC 字幕。")}
+                ? trSub("subtitle.ytNoSubtitle")
+                : trSub("subtitle.biliNoSubtitle"))}
           </div>
         )}
       </div>
@@ -2541,9 +2580,12 @@ function Comp_Dn(e) {
     () => (
       C &&
         !J.current &&
-        chrome.storage.local.get("autoPlay").then(({ autoPlay: e }) => {
-          e && G.current?.play();
-        }),
+        chrome.storage.local
+          .get("autoPlay")
+          .then(({ autoPlay: e }) => {
+            e && G.current?.play();
+          })
+          .catch(() => {}),
       () => {
         J.current = C;
       }
@@ -2584,7 +2626,7 @@ function Comp_Dn(e) {
       setSubtitleState({
         loading: false,
         data: null,
-        error: err?.message || "探测字幕失败",
+        error: err?.message || tr("subtitle.detectFailed"),
       });
     }
   }, []);

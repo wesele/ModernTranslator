@@ -375,7 +375,14 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
     if (subState.data?.platform) return subState.data.platform;
     return parseYouTubeVideoUrl(window.location.href) ? "youtube" : "bilibili";
   }, [subState.data?.platform]);
-  const platformDisplayName = currentPlatform === "youtube" ? "YouTube" : "B 站";
+  const platformDisplayName =
+    currentPlatform === "youtube"
+      ? t("classroom.platformYouTube")
+      : t("classroom.platformBilibili");
+  const getSectionTitle = React.useCallback(
+    (sec) => t("classroom.sectionTitle", { n: sec?.number ?? 1 }),
+    [t]
+  );
   const resolvedVideoTitle = React.useMemo(() => {
     if (subState.data?.videoTitle && subState.data.videoTitle !== "YouTube") {
       return subState.data.videoTitle;
@@ -426,12 +433,16 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
         setSubState({
           loading: false,
           data: null,
-          error: err?.message || `获取 ${isYt ? "YouTube" : "B 站"} 视频字幕失败，请刷新重试。`,
+          error:
+            err?.message ||
+            t("classroom.errFetchSubs", {
+              platform: isYt ? t("classroom.platformYouTube") : t("classroom.platformBilibili"),
+            }),
           loadedKey: videoKey,
         });
       }
     },
-    [targetLanguage, disconnectAllPorts]
+    [targetLanguage, disconnectAllPorts, t]
   );
 
   // Load subtitles when modal opens or video changes
@@ -596,7 +607,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
       const ratio = ratioOverride ?? difficultyRatio;
       const apiCode = apiOverride ?? selectedApiCode;
       if (!track || !section || !Array.isArray(section.cues) || section.cues.length === 0) {
-        return Promise.resolve({ ok: false, error: "当前小节暂无字幕内容。" });
+        return Promise.resolve({ ok: false, error: t("classroom.toastEmptySection") });
       }
 
       const stateKey = buildSectionStateKey(track.key, ratio, apiCode, section.id);
@@ -655,7 +666,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
         try {
           port = chrome.runtime.connect({ name: "ndt-classroom-stream" });
         } catch (err) {
-          const msg = err?.message || "无法连接到扩展后台服务，请刷新页面重试。";
+          const msg = err?.message || t("classroom.toastPortDisconnected");
           setSectionStates((prev) => ({
             ...prev,
             [stateKey]: {
@@ -733,7 +744,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
               [stateKey]: {
                 status: "error",
                 data: null,
-                error: msg.error || "提取难点词汇失败，请重试。",
+                error: msg.error || t("classroom.toastExtractFailed"),
                 needConfig: Boolean(msg.needConfig),
                 progress: null,
               },
@@ -798,6 +809,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
       resolvedVideoId,
       targetLanguage,
       isMultiSection,
+      t,
     ]
   );
 
@@ -827,8 +839,8 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
           if (!res?.ok || !Array.isArray(res.track?.cues) || res.track.cues.length === 0) {
             showToast(
               res?.rateLimited || res?.reason === "RATE_LIMITED"
-                ? "YouTube 字幕请求受限，请稍后再试"
-                : "加载该字幕轨道失败，请稍后重试或开启播放器 CC 字幕"
+                ? t("classroom.toastYtRateLimit")
+                : t("classroom.toastTrackLoadFail")
             );
             return;
           }
@@ -850,7 +862,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
           });
         } catch {
           setLoadingTrackKey("");
-          showToast("加载该字幕轨道失败，请稍后重试");
+          showToast(t("classroom.toastTrackLoadFailShort"));
           return;
         }
       }
@@ -881,7 +893,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
         isMultiOverride: plan.sections.length > 1,
       });
     },
-    [difficultyRatio, selectedApiCode, extractSection, showToast]
+    [difficultyRatio, selectedApiCode, extractSection, showToast, t]
   );
 
   const handleSelectSection = React.useCallback(
@@ -907,7 +919,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
     if (!currentTrack || sections.length <= 1) return;
     if (batchAllRunning) {
       disconnectAllPorts();
-      showToast("已停止生成剩余小节");
+      showToast(t("classroom.toastStoppedRemaining"));
       return;
     }
 
@@ -951,7 +963,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
     setBatchAllRunning(false);
     setBatchAllCurrentSection(-1);
     if (!batchAllCancelRef.current) {
-      showToast("全部小节难点词提取完成！");
+      showToast(t("classroom.toastAllDone"));
     }
   }, [
     currentTrack,
@@ -963,6 +975,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
     extractSection,
     disconnectAllPorts,
     showToast,
+    t,
   ]);
 
   const extractedItems = React.useMemo(
@@ -1080,7 +1093,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
       const displayTerm = isolateBidiInline(item.term);
       if (saved) {
         await wordbook.removeItem(normalizeTermKey(item.term, studyLangKey));
-        showToast(`已从单词本移除「${displayTerm}」`);
+        showToast(t("classroom.toastRemovedFromWordbook", { term: displayTerm }));
       } else {
         setSessionMasteredIds((prev) => {
           if (!prev.has(item.id)) return prev;
@@ -1089,10 +1102,10 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
           return next;
         });
         await wordbook.addItem(buildWordbookPayload(item));
-        showToast(`已加入单词本「${displayTerm}」`);
+        showToast(t("classroom.toastAddedToWordbook", { term: displayTerm }));
       }
     },
-    [wordbook, studyLangKey, buildWordbookPayload, showToast]
+    [wordbook, studyLangKey, buildWordbookPayload, showToast, t]
   );
 
   const handleSpeak = React.useCallback(
@@ -1114,10 +1127,10 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
           },
         })
         .catch(() => {
-          showToast("当前浏览器暂不支持该语种朗读");
+          showToast(t("classroom.toastTtsUnsupported"));
         });
     },
-    [activeSectionState.data, currentTrack, showToast]
+    [activeSectionState.data, currentTrack, showToast, t]
   );
 
   const handleSeekVideo = React.useCallback(
@@ -1130,10 +1143,10 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
         video.play?.().catch?.(() => {});
         onClose?.();
       } else {
-        showToast(`已定位视频至 ${formatSubtitleTime(targetTime)}`);
+        showToast(t("classroom.toastSeeked", { time: formatSubtitleTime(targetTime) }));
       }
     },
-    [onClose, showToast]
+    [onClose, showToast, t]
   );
 
   const handleOpenSettings = React.useCallback(() => {
@@ -1142,7 +1155,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
 
   const handleExportWordbook = React.useCallback(() => {
     if (wordbook.items.length === 0) {
-      showToast("单词本暂无词条可导出");
+      showToast(t("classroom.toastExportEmpty"));
       return;
     }
     const tsv = exportWordbookToTsv(wordbook.items);
@@ -1155,8 +1168,8 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    showToast(`已导出 ${wordbook.items.length} 条单词本记录（支持导入 Anki / Excel）`);
-  }, [wordbook.items, showToast]);
+    showToast(t("classroom.toastExported", { count: wordbook.items.length }));
+  }, [wordbook.items, showToast, t]);
 
   const toggleRevealItem = React.useCallback((id) => {
     setRevealedIds((prev) => {
@@ -1332,7 +1345,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
         className={isMaximized ? "is-maximized" : undefined}
         role="dialog"
         aria-modal="true"
-        aria-label="语言课堂"
+        aria-label={t("classroom.title")}
       >
         {/* Header */}
         <header className="ndt-cls-header">
@@ -1342,8 +1355,8 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
             </span>
             <div className="ndt-cls-brand-text">
               <div className="ndt-cls-title-row">
-                <h2 className="ndt-cls-title">语言课堂</h2>
-                <span className="ndt-cls-beta-pill">课前难词预习</span>
+                <h2 className="ndt-cls-title">{t("classroom.title")}</h2>
+                <span className="ndt-cls-beta-pill">{t("classroom.betaPill")}</span>
               </div>
               <div
                 className="ndt-cls-video-name"
@@ -1363,7 +1376,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
               onClick={() => setActiveTab("study")}
             >
               <SparklesIcon size={14} />
-              <span>课前预习</span>
+              <span>{t("classroom.tabStudy")}</span>
             </button>
             <button
               type="button"
@@ -1373,7 +1386,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
               onClick={() => setActiveTab("wordbook")}
             >
               <StarIcon filled={wordbook.items.length > 0} size={14} />
-              <span>单词本</span>
+              <span>{t("classroom.tabWordbook")}</span>
               <span className="ndt-cls-tab-count">{wordbook.items.length}</span>
             </button>
           </div>
@@ -1383,8 +1396,10 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
               type="button"
               className="ndt-cls-icon-btn"
               onClick={() => setIsMaximized((prev) => !prev)}
-              title={isMaximized ? "还原窗口大小" : "最大化窗口"}
-              aria-label={isMaximized ? "还原窗口" : "最大化窗口"}
+              title={isMaximized ? t("classroom.restoreWindow") : t("classroom.maximizeWindow")}
+              aria-label={
+                isMaximized ? t("classroom.restoreWindowShort") : t("classroom.maximizeWindow")
+              }
             >
               {isMaximized ? <RestoreIcon size={14} /> : <MaximizeIcon size={14} />}
             </button>
@@ -1392,8 +1407,8 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
               type="button"
               className="ndt-cls-icon-btn"
               onClick={onClose}
-              title="关闭语言课堂 (Esc)"
-              aria-label="关闭"
+              title={t("classroom.closeTitle")}
+              aria-label={t("classroom.closeAria")}
             >
               <CloseIcon size={15} />
             </button>
@@ -1406,13 +1421,13 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
             {/* Top Controls */}
             <div className="ndt-cls-toolbar">
               <div className="ndt-cls-toolbar-group">
-                <span className="ndt-cls-field-label">字幕轨道</span>
+                <span className="ndt-cls-field-label">{t("classroom.subtitleTrack")}</span>
                 {subState.loading ? (
-                  <span className="ndt-cls-field-label">正在探测字幕...</span>
+                  <span className="ndt-cls-field-label">{t("classroom.detectingSubtitles")}</span>
                 ) : selectableTracks.length > 5 ? (
                   <select
                     className="ndt-cls-select"
-                    aria-label="选择字幕轨道"
+                    aria-label={t("classroom.selectTrackAria")}
                     disabled={Boolean(loadingTrackKey)}
                     value={currentTrack?.key || ""}
                     onChange={(e) => {
@@ -1422,8 +1437,12 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                   >
                     {selectableTracks.map((tr) => (
                       <option key={tr.key} value={tr.key}>
-                        {tr.lanDoc || tr.lan || "字幕"}
-                        {tr.isActiveInPlayer ? " (当前)" : tr.isOriginalLang ? " (原声)" : ""}
+                        {tr.lanDoc || tr.lan || t("subtitle.defaultTrackName")}
+                        {tr.isActiveInPlayer
+                          ? t("classroom.trackCurrentSuffix")
+                          : tr.isOriginalLang
+                            ? t("classroom.trackOriginalSuffix")
+                            : ""}
                       </option>
                     ))}
                   </select>
@@ -1445,9 +1464,11 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                         >
                           <span>
                             {isBusy ? (
-                              "加载中..."
+                              t("classroom.loading")
                             ) : (
-                              <bdi dir="auto">{tr.lanDoc || tr.lan || "字幕"}</bdi>
+                              <bdi dir="auto">
+                                {tr.lanDoc || tr.lan || t("subtitle.defaultTrackName")}
+                              </bdi>
                             )}
                           </span>
                         </button>
@@ -1455,12 +1476,12 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                     })}
                   </div>
                 ) : (
-                  <span className="ndt-cls-field-label">未检测到可用字幕</span>
+                  <span className="ndt-cls-field-label">{t("classroom.noTracksDetected")}</span>
                 )}
               </div>
 
               <div className="ndt-cls-toolbar-group">
-                <div className="ndt-cls-ratio-group" title="按难度挑选比例">
+                <div className="ndt-cls-ratio-group" title={t("classroom.ratioGroupTitle")}>
                   {RATIO_OPTIONS.map((r) => (
                     <button
                       key={r}
@@ -1476,14 +1497,14 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                         }
                       }}
                     >
-                      最难 {r}%
+                      {t("classroom.ratioHardest", { ratio: r })}
                     </button>
                   ))}
                 </div>
 
                 <select
                   className="ndt-cls-select"
-                  aria-label="选择大模型"
+                  aria-label={t("classroom.selectModelAria")}
                   value={selectedApiCode}
                   onChange={(e) => {
                     const nextApi = e.target.value;
@@ -1499,7 +1520,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                   {llmServices.map((svc) => (
                     <option key={svc.id} value={svc.id}>
                       {svc.name}
-                      {svc.model ? ` · ${svc.model}` : " (未选模型)"}
+                      {svc.model ? ` · ${svc.model}` : t("classroom.noModelParen")}
                     </option>
                   ))}
                 </select>
@@ -1511,14 +1532,14 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                       className={`ndt-cls-ratio-btn ${viewMode === "focus" ? "is-active" : ""}`}
                       onClick={() => setViewMode("focus")}
                     >
-                      学习卡片
+                      {t("classroom.viewFocus")}
                     </button>
                     <button
                       type="button"
                       className={`ndt-cls-ratio-btn ${viewMode === "grid" ? "is-active" : ""}`}
                       onClick={() => setViewMode("grid")}
                     >
-                      全部总览
+                      {t("classroom.viewGrid")}
                     </button>
                   </div>
                 )}
@@ -1554,6 +1575,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                       const isDone = st?.status === "done";
                       const isLoading = st?.status === "loading";
                       const isError = st?.status === "error";
+                      const secTitle = getSectionTitle(sec);
                       const secPct =
                         isLoading && sec.cueCount > 0
                           ? Math.min(
@@ -1569,7 +1591,11 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                             isDone ? "is-done" : isLoading ? "is-loading" : isError ? "is-err" : ""
                           }`}
                           onClick={() => handleSelectSection(sec)}
-                          title={`${sec.title}（${sec.timeRange}，共 ${sec.cueCount} 句）`}
+                          title={t("classroom.sectionTooltip", {
+                            title: secTitle,
+                            range: sec.timeRange,
+                            count: sec.cueCount,
+                          })}
                         >
                           <span className="ndt-cls-section-pill-top">
                             <span className="ndt-cls-section-dot">
@@ -1581,10 +1607,12 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                 sec.number
                               )}
                             </span>
-                            <span className="ndt-cls-section-pill-title">{sec.title}</span>
+                            <span className="ndt-cls-section-pill-title">{secTitle}</span>
                             {isDone && (
                               <span className="ndt-cls-section-count">
-                                {st.data?.items?.length || 0}词
+                                {t("classroom.sectionWordCount", {
+                                  count: st.data?.items?.length || 0,
+                                })}
                               </span>
                             )}
                             {isLoading && (
@@ -1593,8 +1621,14 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                           </span>
                           <span className="ndt-cls-section-pill-sub">
                             {isLoading
-                              ? `已检 ${st.progress?.processedCues || 0}/${sec.cueCount}句`
-                              : `${sec.timeRange} · ${sec.cueCount}句`}
+                              ? t("classroom.sectionCheckedCues", {
+                                  done: st.progress?.processedCues || 0,
+                                  total: sec.cueCount,
+                                })
+                              : t("classroom.sectionRangeCues", {
+                                  range: sec.timeRange,
+                                  count: sec.cueCount,
+                                })}
                           </span>
                         </button>
                       );
@@ -1606,8 +1640,11 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                       <span className="ndt-cls-bg-badge">
                         <RefreshSvg size={11} spinning />
                         <span>
-                          正在生成第 {bgRunningSection.number} 节（
-                          {bgRunningState?.progress?.processedCues || 0}/{bgRunningSection.cueCount}句）
+                          {t("classroom.bgGenerating", {
+                            n: bgRunningSection.number,
+                            done: bgRunningState?.progress?.processedCues || 0,
+                            total: bgRunningSection.cueCount,
+                          })}
                         </span>
                       </span>
                     )}
@@ -1616,21 +1653,21 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                         type="button"
                         className={`ndt-cls-btn is-sm ${batchAllRunning ? "is-danger-ghost" : ""}`}
                         onClick={handleExtractAllSections}
-                        title="按顺序自动生成剩余小节，同时可继续学习当前小节"
+                        title={t("classroom.extractAllTitle")}
                       >
                         {batchAllRunning ? (
-                          <span>停止生成</span>
+                          <span>{t("classroom.stopGenerating")}</span>
                         ) : (
                           <>
                             <SparklesIcon size={12} />
-                            <span>全部生成</span>
+                            <span>{t("classroom.generateAll")}</span>
                           </>
                         )}
                       </button>
                     ) : (
                       <span className="ndt-cls-all-done-pill">
                         <CheckIcon size={12} />
-                        <span>全部 {sections.length} 节已就绪</span>
+                        <span>{t("classroom.allSectionsReady", { count: sections.length })}</span>
                       </span>
                     )}
                   </div>
@@ -1641,11 +1678,9 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                 <div className="ndt-cls-center-stage">
                   <div className="ndt-cls-loading-ring" />
                   <h3 className="ndt-cls-hero-title">
-                    正在读取 {platformDisplayName} 视频字幕...
+                    {t("classroom.loadingVideoSubs", { platform: platformDisplayName })}
                   </h3>
-                  <p className="ndt-cls-hero-desc">
-                    正在获取当前视频的多语言 CC / 自动生成字幕轨道，请稍候。
-                  </p>
+                  <p className="ndt-cls-hero-desc">{t("classroom.loadingVideoSubsDesc")}</p>
                 </div>
               )}
 
@@ -1659,35 +1694,21 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                         : playableTracks.length === 0)))) && (
                   <div className="ndt-cls-center-stage">
                     <div className="ndt-cls-error-box">
-                      {subState.error ? (
-                        subState.error
-                      ) : currentPlatform === "youtube" ? (
-                        subState.data?.rateLimited || subState.data?.reason === "RATE_LIMITED" ? (
-                          <>
-                            YouTube 字幕接口当前触发了频率限制（HTTP 429）。请等待 1–2 分钟后点击下方「重新探测字幕」。
-                          </>
-                        ) : subState.data?.partial ? (
-                          <>
-                            已探测到 {tracks.length} 条 YouTube 字幕轨道，但暂未拉取到字幕正文。请在播放器中点击开启 <strong>CC 字幕</strong> 后，再点击下方「重新探测字幕」。
-                          </>
-                        ) : (
-                          <>
-                            当前 YouTube 视频暂未检测到可用的 CC 字幕或自动生成字幕轨道。若视频刚切换，可等待片刻或开启播放器 CC 按钮后点击重新探测。
-                          </>
-                        )
-                      ) : subState.data?.reason === "NEED_LOGIN" ||
-                        (subState.data?.partial && subState.data?.needLoginSubtitle) ? (
-                        <>
-                          检测到视频存在字幕，但当前 B 站未登录（<code>need_login_subtitle=true</code>），B 站接口未返回字幕内容。请先登录 B 站账号后再点击重试。
-                        </>
-                      ) : subState.data?.reason === "NO_SUBTITLE" ||
-                        playableTracks.length === 0 ? (
-                        <>
-                          当前视频暂未检测到可用的 CC / AI 字幕轨道。如果视频支持 AI 字幕，可先在播放器右下角开启 AI 字幕后再点击重新探测。
-                        </>
-                      ) : (
-                        "暂未识别到当前视频的字幕信息，请刷新后重试。"
-                      )}
+                      {subState.error
+                        ? subState.error
+                        : currentPlatform === "youtube"
+                          ? subState.data?.rateLimited || subState.data?.reason === "RATE_LIMITED"
+                            ? t("classroom.errYtRateLimit")
+                            : subState.data?.partial
+                              ? t("classroom.errYtPartial", { count: tracks.length })
+                              : t("classroom.errYtNoSub")
+                          : subState.data?.reason === "NEED_LOGIN" ||
+                              (subState.data?.partial && subState.data?.needLoginSubtitle)
+                            ? t("classroom.errBiliNeedLogin")
+                            : subState.data?.reason === "NO_SUBTITLE" ||
+                                playableTracks.length === 0
+                              ? t("classroom.errBiliNoSub")
+                              : t("classroom.errUnknownSub")}
                     </div>
                     <div className="ndt-cls-action-row">
                       <button
@@ -1696,7 +1717,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                         onClick={() => loadSubtitles(true)}
                       >
                         <RefreshSvg size={13} />
-                        <span>重新探测字幕</span>
+                        <span>{t("classroom.redetectSubtitles")}</span>
                       </button>
                     </div>
                   </div>
@@ -1710,12 +1731,11 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                   <div className="ndt-cls-center-stage">
                     <div className="ndt-cls-hero-badge">
                       <SparklesIcon size={13} />
-                      <span>看前预习 · AI 精选最难 {difficultyRatio}% 词汇与短语</span>
+                      <span>{t("classroom.heroBadge", { ratio: difficultyRatio })}</span>
                     </div>
-                    <h3 className="ndt-cls-hero-title">选择要学习的视频字幕轨道</h3>
+                    <h3 className="ndt-cls-hero-title">{t("classroom.pickTrackTitle")}</h3>
                     <p className="ndt-cls-hero-desc">
-                      点击下方任意字幕轨道，立即调用大模型提炼最难的 {difficultyRatio}%{" "}
-                      核心生词与地道短语。长视频将自动按耗时与学习量智能划分小节，实时展示检测句数进度。
+                      {t("classroom.pickTrackDesc", { ratio: difficultyRatio })}
                     </p>
 
                     <div className="ndt-cls-track-cards">
@@ -1746,35 +1766,50 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                 }`}
                                 dir="auto"
                               >
-                                {tr.lanDoc || tr.lan || "字幕轨道"}
+                                {tr.lanDoc || tr.lan || t("classroom.subtitleTrack")}
                               </span>
-                              {isRec && <span className="ndt-cls-track-card-rec">推荐学习</span>}
+                              {isRec && (
+                                <span className="ndt-cls-track-card-rec">
+                                  {t("classroom.recommended")}
+                                </span>
+                              )}
                             </div>
                             <div className="ndt-cls-track-card-meta">
                               {isLoaded && previewPlan ? (
                                 <>
-                                  <span>共 {previewPlan.totalCues} 句字幕</span>
+                                  <span>
+                                    {t("classroom.totalCuesMeta", {
+                                      count: previewPlan.totalCues,
+                                    })}
+                                  </span>
                                   <span>
                                     {secCount > 1
-                                      ? `智能分 ${secCount} 节 · 约 ${avgPerSec} 句/节`
-                                      : "单节完整分析"}
+                                      ? t("classroom.multiSectionMeta", {
+                                          sections: secCount,
+                                          avg: avgPerSec,
+                                        })
+                                      : t("classroom.singleSectionMeta")}
                                   </span>
                                 </>
                               ) : (
                                 <>
-                                  <span>{tr.isAutoGenerated ? "YouTube 自动字幕" : "YouTube 字幕"}</span>
-                                  <span>按需加载</span>
+                                  <span>
+                                    {tr.isAutoGenerated
+                                      ? t("classroom.ytAutoSub")
+                                      : t("classroom.ytSub")}
+                                  </span>
+                                  <span>{t("classroom.loadOnDemand")}</span>
                                 </>
                               )}
                             </div>
                             <div className="ndt-cls-track-card-cta">
                               {isBusy
-                                ? "正在加载该轨道字幕..."
+                                ? t("classroom.ctaLoadingTrack")
                                 : isLoaded
                                   ? secCount > 1
-                                    ? `点击先提取第 1 节（最难 ${difficultyRatio}%）→`
-                                    : `点击开始提取最难 ${difficultyRatio}% 词条 →`
-                                  : `点击加载字幕并提取最难 ${difficultyRatio}% 词条 →`}
+                                    ? t("classroom.ctaMultiSection", { ratio: difficultyRatio })
+                                    : t("classroom.ctaSingleSection", { ratio: difficultyRatio })
+                                  : t("classroom.ctaLoadAndExtract", { ratio: difficultyRatio })}
                             </div>
                           </button>
                         );
@@ -1784,11 +1819,13 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                     {selectableTracks.length > 6 && (
                       <div className="ndt-cls-action-row" style={{ marginBottom: 14 }}>
                         <span className="ndt-cls-field-label">
-                          其他 {selectableTracks.length - 6} 种语言字幕：
+                          {t("classroom.moreLanguagesLabel", {
+                            count: selectableTracks.length - 6,
+                          })}
                         </span>
                         <select
                           className="ndt-cls-select"
-                          aria-label="选择其他语言字幕"
+                          aria-label={t("classroom.selectOtherLangAria")}
                           disabled={Boolean(loadingTrackKey)}
                           defaultValue=""
                           onChange={(e) => {
@@ -1797,7 +1834,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                           }}
                         >
                           <option value="" disabled>
-                            展开选择更多字幕轨道...
+                            {t("classroom.expandMoreTracks")}
                           </option>
                           {selectableTracks.slice(6).map((tr) => (
                             <option key={tr.key} value={tr.key}>
@@ -1811,14 +1848,14 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                     {!currentLlmObj?.ready && (
                       <div className="ndt-cls-action-row">
                         <span className="ndt-cls-field-label">
-                          当前大模型尚未完成 API Key / 模型配置
+                          {t("classroom.llmNotConfigured")}
                         </span>
                         <button
                           type="button"
                           className="ndt-cls-btn is-sm"
                           onClick={handleOpenSettings}
                         >
-                          打开配置页
+                          {t("classroom.openSettingsBtn")}
                         </button>
                       </div>
                     )}
@@ -1834,33 +1871,56 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                     <div className="ndt-cls-hero-badge">
                       <SparklesIcon size={13} />
                       <span>
-                        {currentLlmObj?.name || "大模型"}
+                        {currentLlmObj?.name || t("classroom.defaultLlmLabel")}
                         {currentLlmObj?.model ? ` · ${currentLlmObj.model}` : ""}
                       </span>
                       {isMultiSection && activeSection && (
                         <span>
-                          · {activeSection.title}/{sections.length}（{activeSection.timeRange}）
+                          · {getSectionTitle(activeSection)}/{sections.length} (
+                          {activeSection.timeRange})
                         </span>
                       )}
                     </div>
                     <h3 className="ndt-cls-hero-title">
-                      正在分析《<bdi dir="auto">{currentTrack?.lanDoc || currentTrack?.lan || "字幕"}</bdi>》
-                      {isMultiSection && activeSection ? ` ${activeSection.title}` : ""}
-                      中的难点词与短语...
+                      {(() => {
+                        const trackLabel =
+                          currentTrack?.lanDoc ||
+                          currentTrack?.lan ||
+                          t("subtitle.defaultTrackName");
+                        const sectionPart =
+                          isMultiSection && activeSection
+                            ? ` ${getSectionTitle(activeSection)}`
+                            : "";
+                        const tpl = t("classroom.analyzingTitle", {
+                          track: "__TRACK_PLACEHOLDER__",
+                          section: sectionPart,
+                        });
+                        const parts = tpl.split("__TRACK_PLACEHOLDER__");
+                        if (parts.length !== 2) return tpl.replace("__TRACK_PLACEHOLDER__", trackLabel);
+                        return (
+                          <>
+                            {parts[0]}
+                            <bdi dir="auto">{trackLabel}</bdi>
+                            {parts[1]}
+                          </>
+                        );
+                      })()}
                     </h3>
 
                     {/* Detailed Sentence Progress Card */}
                     <div className="ndt-cls-progress-card">
                       <div className="ndt-cls-progress-card-top">
                         <span className="ndt-cls-progress-card-label">
-                          {isMultiSection ? "本节检测进度" : "字幕检测进度"}
+                          {isMultiSection
+                            ? t("classroom.sectionProgressLabel")
+                            : t("classroom.subtitleProgressLabel")}
                         </span>
                         <span className="ndt-cls-progress-card-nums">
-                          已检测{" "}
-                          <strong>
-                            {activeProgress.processedCues} / {activeProgress.totalCues}
-                          </strong>{" "}
-                          句（{activeProgressPct}%）
+                          {t("classroom.checkedCuesStatus", {
+                            done: activeProgress.processedCues,
+                            total: activeProgress.totalCues,
+                            pct: activeProgressPct,
+                          })}
                         </span>
                       </div>
 
@@ -1874,15 +1934,20 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                       <div className="ndt-cls-progress-details">
                         {activeProgress.batchCount > 1 && (
                           <span className="ndt-cls-progress-chip">
-                            分批处理：第 {activeProgress.batchIndex} / {activeProgress.batchCount} 批
+                            {t("classroom.batchProgressChip", {
+                              current: activeProgress.batchIndex,
+                              total: activeProgress.batchCount,
+                            })}
                           </span>
                         )}
                         <span className="ndt-cls-progress-chip">
-                          已发现难点词：{activeProgress.extractedCount} 个
+                          {t("classroom.foundVocabChip", {
+                            count: activeProgress.extractedCount,
+                          })}
                         </span>
                         {activeProgress.latestTerm && (
                           <span className="ndt-cls-progress-chip is-accent">
-                            最新识别：
+                            {t("classroom.latestTermPrefix")}
                             <bdi
                               dir="auto"
                               className={isRtlText(activeProgress.latestTerm) ? "is-rtl" : undefined}
@@ -1895,12 +1960,13 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
 
                       {isMultiSection && (
                         <div className="ndt-cls-progress-overall">
-                          全片总进度：已检测{" "}
-                          <strong>
-                            {overallStats.processedCues} / {overallStats.totalCues}
-                          </strong>{" "}
-                          句（{overallStats.percent}% · 已完成 {overallStats.completedSections}/
-                          {sections.length} 节）
+                          {t("classroom.overallProgress", {
+                            done: overallStats.processedCues,
+                            total: overallStats.totalCues,
+                            pct: overallStats.percent,
+                            completed: overallStats.completedSections,
+                            sections: sections.length,
+                          })}
                         </div>
                       )}
                     </div>
@@ -1918,7 +1984,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                           }
                         }}
                       >
-                        取消当前分析
+                        {t("classroom.cancelAnalysis")}
                       </button>
                     </div>
                   </div>
@@ -1937,7 +2003,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                           className="ndt-cls-btn is-primary"
                           onClick={handleOpenSettings}
                         >
-                          前往配置大模型
+                          {t("classroom.goConfigLlm")}
                         </button>
                       )}
                       <button
@@ -1949,7 +2015,11 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                         }
                       >
                         <RefreshSvg size={13} />
-                        <span>重新提取{isMultiSection ? "本节" : ""}</span>
+                        <span>
+                          {isMultiSection
+                            ? t("classroom.reExtractSection")
+                            : t("classroom.reExtract")}
+                        </span>
                       </button>
                     </div>
                   </div>
@@ -1964,15 +2034,20 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                     <div className="ndt-cls-hero-badge">
                       <SparklesIcon size={13} />
                       <span>
-                        {activeSection.title} · {activeSection.timeRange} · 共{" "}
-                        {activeSection.cueCount} 句
+                        {t("classroom.idleBadge", {
+                          title: getSectionTitle(activeSection),
+                          range: activeSection.timeRange,
+                          count: activeSection.cueCount,
+                        })}
                       </span>
                     </div>
-                    <h3 className="ndt-cls-hero-title">准备提取本节难点单词与短语</h3>
+                    <h3 className="ndt-cls-hero-title">{t("classroom.idleTitle")}</h3>
                     <p className="ndt-cls-hero-desc">
-                      本节包含 {activeSection.cueCount} 句字幕，预计提取约{" "}
-                      {activeSection.targetVocab.minCount}–{activeSection.targetVocab.maxCount}{" "}
-                      个最难的单词和短语。
+                      {t("classroom.idleDesc", {
+                        count: activeSection.cueCount,
+                        min: activeSection.targetVocab.minCount,
+                        max: activeSection.targetVocab.maxCount,
+                      })}
                     </p>
                     <button
                       type="button"
@@ -1980,7 +2055,13 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                       onClick={() => extractSection({ section: activeSection })}
                     >
                       <SparklesIcon size={14} />
-                      <span>开始提取{isMultiSection ? activeSection.title : "难点词"}</span>
+                      <span>
+                        {isMultiSection
+                          ? t("classroom.startExtractSection", {
+                              title: getSectionTitle(activeSection),
+                            })
+                          : t("classroom.startExtractVocab")}
+                      </span>
                     </button>
                   </div>
                 )}
@@ -1993,7 +2074,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                   <>
                     {filteredItems.length === 0 ? (
                       <div className="ndt-cls-center-stage">
-                        <p className="ndt-cls-hero-desc">当前小节暂未提取到难点词条。</p>
+                        <p className="ndt-cls-hero-desc">{t("classroom.emptySectionResult")}</p>
                       </div>
                     ) : viewMode === "focus" ? (
                       <div className="ndt-cls-study-split">
@@ -2001,7 +2082,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                         <aside
                           ref={dotRailRef}
                           className="ndt-cls-dot-rail"
-                          aria-label="词汇学习状态总览"
+                          aria-label={t("classroom.statusRailAria")}
                         >
                           {(() => {
                             const rows = Math.min(filteredItems.length, dotRowsPerCol);
@@ -2019,12 +2100,12 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                   const status = getWordLearningStatus(item);
                                   const statusLabel =
                                     status === "mastered"
-                                      ? "已掌握"
+                                      ? t("classroom.statusMastered")
                                       : status === "new"
-                                        ? "生词"
+                                        ? t("classroom.statusNew")
                                         : status === "studied"
-                                          ? "已学习"
-                                          : "未学";
+                                          ? t("classroom.statusStudied")
+                                          : t("classroom.statusUnstudied");
                                   return (
                                     <button
                                       key={item.id}
@@ -2034,7 +2115,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                       }`}
                                       onClick={() => setActiveItemId(item.id)}
                                       title={`${idx + 1}. ${item.term} · ${statusLabel}`}
-                                      aria-label={`${idx + 1}. ${item.term}，${statusLabel}`}
+                                      aria-label={`${idx + 1}. ${item.term}, ${statusLabel}`}
                                       aria-current={isActive ? "true" : undefined}
                                     >
                                       <span className="ndt-cls-dot-sq" />
@@ -2066,8 +2147,8 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                       type="button"
                                       className="ndt-cls-speak-btn is-icon-only"
                                       onClick={() => handleSpeak(activeItem.term)}
-                                      title="朗读发音"
-                                      aria-label="朗读发音"
+                                      title={t("wordbook.speakTerm")}
+                                      aria-label={t("wordbook.speakTerm")}
                                     >
                                       <SpeakerIcon size={16} />
                                     </button>
@@ -2082,7 +2163,9 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                       <span className="ndt-cls-pos-chip">{activeItem.pos}</span>
                                     )}
                                     <span className="ndt-cls-type-chip">
-                                      {activeItem.type === "phrase" ? "短语 / 搭配" : "核心单词"}
+                                      {activeItem.type === "phrase"
+                                        ? t("wordbook.typePhrase")
+                                        : t("wordbook.typeWord")}
                                     </span>
                                     {activeItem.level && (
                                       <span className="ndt-cls-level-chip">
@@ -2091,7 +2174,9 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                     )}
                                     <span
                                       className="ndt-cls-diff-dots"
-                                      title={`难度 ${activeItem.difficulty}/5`}
+                                      title={t("wordbook.difficultyTitle", {
+                                        level: activeItem.difficulty || 4,
+                                      })}
                                     >
                                       {[1, 2, 3, 4, 5].map((lvl) => (
                                         <span
@@ -2106,7 +2191,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                       activeItem.surfaceForm.toLowerCase() !==
                                         activeItem.term.toLowerCase() && (
                                         <span className="ndt-cls-surface-chip">
-                                          字幕原形：
+                                          {t("wordbook.surfaceFormPrefix")}
                                           <bdi
                                             dir="auto"
                                             className={
@@ -2131,7 +2216,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                         className="ndt-cls-filter-pill"
                                         onClick={() => toggleRevealItem(activeItem.id)}
                                       >
-                                        重新遮挡
+                                        {t("wordbook.hideAgain")}
                                       </button>
                                     </div>
                                   )}
@@ -2140,12 +2225,12 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                       className="ndt-cls-reveal-mask"
                                       onClick={() => toggleRevealItem(activeItem.id)}
                                     >
-                                      先回想一下它的含义，点击此处或按 Space 键显示释义与用法
+                                      {t("wordbook.quizRevealMask")}
                                     </div>
                                   ) : (
                                     <>
                                       <p className="ndt-cls-meaning-text">
-                                        {activeItem.translation || "暂无释义"}
+                                        {activeItem.translation || t("wordbook.noMeaning")}
                                       </p>
                                       {activeItem.explanation && (
                                         <p className="ndt-cls-explanation">
@@ -2160,13 +2245,15 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                 {activeItem.videoQuote && (
                                   <div className="ndt-cls-section">
                                     <div className="ndt-cls-section-head">
-                                      <span className="ndt-cls-section-label">视频字幕原句</span>
+                                      <span className="ndt-cls-section-label">
+                                        {t("wordbook.videoQuoteLabel")}
+                                      </span>
                                       <div className="ndt-cls-study-actions">
                                         <button
                                           type="button"
                                           className="ndt-cls-speak-btn is-mini"
                                           onClick={() => handleSpeak(activeItem.videoQuote)}
-                                          title="朗读视频原句"
+                                          title={t("wordbook.speakQuote")}
                                         >
                                           <SpeakerIcon size={13} />
                                         </button>
@@ -2175,9 +2262,11 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                             type="button"
                                             className="ndt-cls-time-btn"
                                             onClick={() => handleSeekVideo(activeItem.videoTime, true)}
-                                            title="跳转到视频该句并开始播放"
+                                            title={t("wordbook.seekVideoTitle")}
                                           >
-                                            ▶ {formatSubtitleTime(activeItem.videoTime)} 跳转观看
+                                            {t("wordbook.seekVideoBtn", {
+                                              time: formatSubtitleTime(activeItem.videoTime),
+                                            })}
                                           </button>
                                         )}
                                       </div>
@@ -2217,7 +2306,9 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                     <div className="ndt-cls-section">
                                       <div className="ndt-cls-section-head">
                                         <span className="ndt-cls-section-label">
-                                          实用例句 ({activeItem.examples.length})
+                                          {t("wordbook.examplesLabel", {
+                                            count: activeItem.examples.length,
+                                          })}
                                         </span>
                                       </div>
                                       <div className="ndt-cls-example-list">
@@ -2240,7 +2331,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                                 type="button"
                                                 className="ndt-cls-speak-btn is-mini"
                                                 onClick={() => handleSpeak(ex.sentence)}
-                                                title="朗读例句"
+                                                title={t("wordbook.speakExample")}
                                               >
                                                 <SpeakerIcon size={13} />
                                               </button>
@@ -2272,7 +2363,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                               <div className="ndt-cls-footer-left">
                                 <label
                                   className={`ndt-cls-quiz-toggle ${quizMode ? "is-checked" : ""}`}
-                                  title="开启后先遮挡中文释义，按空格键或点击显示"
+                                  title={t("wordbook.quizModeTitle")}
                                 >
                                   <input
                                     type="checkbox"
@@ -2285,7 +2376,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                   <span className="ndt-cls-switch-track" aria-hidden="true">
                                     <span className="ndt-cls-switch-thumb" />
                                   </span>
-                                  <span>自测模式（空格翻开）</span>
+                                  <span>{t("wordbook.quizModeLabel")}</span>
                                 </label>
                               </div>
 
@@ -2298,7 +2389,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                     setActiveItemId(filteredItems[activeIndex - 1].id)
                                   }
                                 >
-                                  ← 上一个
+                                  {t("wordbook.prevItem")}
                                 </button>
                                 {activeIndex < filteredItems.length - 1 ? (
                                   <button
@@ -2308,7 +2399,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                       setActiveItemId(filteredItems[activeIndex + 1].id)
                                     }
                                   >
-                                    下一个 →
+                                    {t("wordbook.nextItem")}
                                   </button>
                                 ) : nextSection ? (
                                   <button
@@ -2316,11 +2407,13 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                     className="ndt-cls-btn is-primary"
                                     onClick={() => handleSelectSection(nextSection)}
                                   >
-                                    进入{nextSection.title} →
+                                    {t("classroom.enterNextSection", {
+                                      title: getSectionTitle(nextSection),
+                                    })}
                                   </button>
                                 ) : (
                                   <button type="button" className="ndt-cls-btn" disabled>
-                                    已是最后一个
+                                    {t("wordbook.lastItem")}
                                   </button>
                                 )}
                               </div>
@@ -2332,13 +2425,13 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                     sessionMasteredIds.has(activeItem.id) ? "is-saved" : ""
                                   }`}
                                   onClick={() => toggleSessionMastered(activeItem.id)}
-                                  title="快捷键 V"
+                                  title={t("wordbook.masteredHotkey")}
                                 >
                                   <CheckIcon size={14} />
                                   <span>
                                     {sessionMasteredIds.has(activeItem.id)
-                                      ? "本次已掌握"
-                                      : "标记已掌握"}
+                                      ? t("classroom.sessionMastered")
+                                      : t("classroom.markMastered")}
                                   </span>
                                 </button>
 
@@ -2354,10 +2447,14 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                         isSaved ? "is-saved" : "is-primary"
                                       }`}
                                       onClick={() => handleToggleWordbook(activeItem)}
-                                      title="快捷键 S / B"
+                                      title={t("classroom.wordbookHotkey")}
                                     >
                                       <StarIcon filled={isSaved} size={14} />
-                                      <span>{isSaved ? "已在单词本" : "加入单词本"}</span>
+                                      <span>
+                                        {isSaved
+                                          ? t("classroom.inWordbook")
+                                          : t("classroom.addToWordbook")}
+                                      </span>
                                     </button>
                                   );
                                 })()}
@@ -2407,7 +2504,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                     type="button"
                                     className="ndt-cls-speak-btn is-mini"
                                     onClick={() => handleSpeak(item.term)}
-                                    title="朗读"
+                                    title={t("wordbook.speakShort")}
                                   >
                                     <SpeakerIcon size={13} />
                                   </button>
@@ -2439,7 +2536,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                       setViewMode("focus");
                                     }}
                                   >
-                                    详情学习 →
+                                    {t("wordbook.detailStudyBtn")}
                                   </button>
                                   <button
                                     type="button"
@@ -2449,7 +2546,11 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                                     onClick={() => handleToggleWordbook(item)}
                                   >
                                     <StarIcon filled={isSaved} size={12} />
-                                    <span>{isSaved ? "已入本" : "加入单词本"}</span>
+                                    <span>
+                                      {isSaved
+                                        ? t("classroom.inWordbookShort")
+                                        : t("classroom.addToWordbook")}
+                                    </span>
                                   </button>
                                 </div>
                               </div>
@@ -2475,7 +2576,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                 <input
                   type="text"
                   className="ndt-cls-search-input"
-                  placeholder="搜索单词、短语、释义或视频标题..."
+                  placeholder={t("classroom.searchPlaceholder")}
                   value={wbSearch}
                   onChange={(e) => setWbSearch(e.target.value)}
                 />
@@ -2488,21 +2589,25 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                     className={`ndt-cls-ratio-btn ${wbFilter === "all" ? "is-active" : ""}`}
                     onClick={() => setWbFilter("all")}
                   >
-                    全部 ({wordbook.items.length})
+                    {t("wordbook.filterAll", { count: wordbook.items.length })}
                   </button>
                   <button
                     type="button"
                     className={`ndt-cls-ratio-btn ${wbFilter === "learning" ? "is-active" : ""}`}
                     onClick={() => setWbFilter("learning")}
                   >
-                    学习中 ({wordbook.items.filter((i) => !i.mastered).length})
+                    {t("wordbook.filterLearning", {
+                      count: wordbook.items.filter((i) => !i.mastered).length,
+                    })}
                   </button>
                   <button
                     type="button"
                     className={`ndt-cls-ratio-btn ${wbFilter === "mastered" ? "is-active" : ""}`}
                     onClick={() => setWbFilter("mastered")}
                   >
-                    已掌握 ({wordbook.items.filter((i) => i.mastered).length})
+                    {t("wordbook.filterMastered", {
+                      count: wordbook.items.filter((i) => i.mastered).length,
+                    })}
                   </button>
                 </div>
 
@@ -2513,14 +2618,14 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                       className={`ndt-cls-ratio-btn ${wbViewMode === "focus" ? "is-active" : ""}`}
                       onClick={() => setWbViewMode("focus")}
                     >
-                      学习卡片
+                      {t("classroom.viewFocus")}
                     </button>
                     <button
                       type="button"
                       className={`ndt-cls-ratio-btn ${wbViewMode === "grid" ? "is-active" : ""}`}
                       onClick={() => setWbViewMode("grid")}
                     >
-                      全部总览
+                      {t("classroom.viewGrid")}
                     </button>
                   </div>
                 )}
@@ -2531,7 +2636,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                   disabled={wordbook.items.length === 0}
                   onClick={handleExportWordbook}
                 >
-                  导出 TSV (Anki)
+                  {t("wordbook.exportTsvBtn")}
                 </button>
               </div>
             </div>
@@ -2553,7 +2658,9 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
               }}
               onRemove={(item) => {
                 wordbook.removeItem(item.id);
-                showToast(`已移出「${isolateBidiInline(item.term)}」`);
+                showToast(
+                  t("classroom.toastRemovedShort", { term: isolateBidiInline(item.term) })
+                );
               }}
               onSeekVideo={handleSeekVideo}
               currentVideoId={resolvedVideoId}

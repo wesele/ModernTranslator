@@ -13,7 +13,7 @@
    },
    "description": {
       "description": "Extension description.",
-      "message": "完全無料・非営利の選択範囲＆ページ全体翻訳拡張機能。バイリンガル表示、LLM ストリーミングバッチ翻訳、Microsoft/Google 翻訳、コミュニティスポンサー API、OpenAI 互換サービスに対応。"
+      "message": "無料・広告なしの選択範囲＆ページ全体のバイリンガル翻訳。YouTube/Bilibili 字幕で語学学習、単語帳、LLM ストリーミング、Google/Microsoft/OpenAI 対応。"
    },
    "name": {
       "description": "Extension name.",

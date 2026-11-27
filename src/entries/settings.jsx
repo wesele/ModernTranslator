@@ -1893,12 +1893,12 @@ function SettingsApp() {
             </div>
             <div>
               <div className="inspector-heading-row">
-                <h1 className="inspector-heading">语言课堂 · 单词本</h1>
-                <span className="inspector-badge is-ready">{wordbook.items.length} 词条</span>
+                <h1 className="inspector-heading">{t("wordbook.settingsHeading")}</h1>
+                <span className="inspector-badge is-ready">
+                  {t("wordbook.itemCountBadge", { count: wordbook.items.length })}
+                </span>
               </div>
-              <p className="inspector-subtitle">
-                收录自 B 站 / YouTube「语言课堂」的难点单词与短语，支持学习卡片复习、全部总览与导出 Anki TSV
-              </p>
+              <p className="inspector-subtitle">{t("wordbook.settingsSubtitle")}</p>
             </div>
           </div>
 
@@ -1909,7 +1909,7 @@ function SettingsApp() {
               disabled={wordbook.items.length === 0}
               onClick={handleExportTsv}
             >
-              导出 TSV (Anki)
+              {t("wordbook.exportTsvBtn")}
             </button>
           </div>
         </div>
@@ -1918,7 +1918,7 @@ function SettingsApp() {
           <input
             type="text"
             className="ndt-input wb-settings-search"
-            placeholder="搜索单词、短语、释义或来源视频..."
+            placeholder={t("wordbook.settingsSearchPlaceholder")}
             value={wbSearch}
             onChange={(e) => setWbSearch(e.target.value)}
           />
@@ -1929,21 +1929,25 @@ function SettingsApp() {
                 className={`theme-segmented-btn ${wbFilter === "all" ? "is-active" : ""}`}
                 onClick={() => setWbFilter("all")}
               >
-                全部 ({wordbook.items.length})
+                {t("wordbook.filterAll", { count: wordbook.items.length })}
               </button>
               <button
                 type="button"
                 className={`theme-segmented-btn ${wbFilter === "learning" ? "is-active" : ""}`}
                 onClick={() => setWbFilter("learning")}
               >
-                学习中 ({wordbook.items.filter((i) => !i.mastered).length})
+                {t("wordbook.filterLearning", {
+                  count: wordbook.items.filter((i) => !i.mastered).length,
+                })}
               </button>
               <button
                 type="button"
                 className={`theme-segmented-btn ${wbFilter === "mastered" ? "is-active" : ""}`}
                 onClick={() => setWbFilter("mastered")}
               >
-                已掌握 ({wordbook.items.filter((i) => i.mastered).length})
+                {t("wordbook.filterMastered", {
+                  count: wordbook.items.filter((i) => i.mastered).length,
+                })}
               </button>
             </div>
 
@@ -1954,14 +1958,14 @@ function SettingsApp() {
                   className={`theme-segmented-btn ${wbViewMode === "focus" ? "is-active" : ""}`}
                   onClick={() => setWbViewMode("focus")}
                 >
-                  学习卡片
+                  {t("classroom.viewFocus")}
                 </button>
                 <button
                   type="button"
                   className={`theme-segmented-btn ${wbViewMode === "grid" ? "is-active" : ""}`}
                   onClick={() => setWbViewMode("grid")}
                 >
-                  全部总览
+                  {t("classroom.viewGrid")}
                 </button>
               </div>
             )}
@@ -1976,7 +1980,7 @@ function SettingsApp() {
           onSpeak={handleSpeakText}
           onToggleMastered={(item) => wordbook.toggleMastered(item.id)}
           onRemove={(item) => wordbook.removeItem(item.id)}
-          emptyHint="单词本还是空的。打开任意带字幕的 B 站或 YouTube 视频，点击播放器右下角插件图标进入「语言课堂」即可预习并收藏生词。"
+          emptyHint={t("wordbook.settingsEmptyHint")}
           enableKeyboardShortcuts={topTab === TOP_TAB_WORDBOOK}
           className={`wb-settings-board ${wbViewMode === "grid" ? "is-grid-mode" : ""}`}
         />

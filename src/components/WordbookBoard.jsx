@@ -1,6 +1,7 @@
 import * as React from "react";
 import { formatSubtitleTime } from "../shared/subtitleTimeline.js";
 import { findHighlightRanges, isRtlText } from "../shared/textScript.js";
+import { useI18n } from "../shared/i18n/index.js";
 
 function SpeakerIcon({ size = 14 }) {
   return (
@@ -92,6 +93,7 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
   },
   ref
 ) {
+  const { t, getLanguageName } = useI18n();
   const [activeItemId, setActiveItemId] = React.useState("");
   const [quizMode, setQuizMode] = React.useState(false);
   const [revealedIds, setRevealedIds] = React.useState(() => new Set());
@@ -241,13 +243,12 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
       {items.length === 0 ? (
         <div className="ndt-cls-center-stage">
           <h3 className="ndt-cls-hero-title">
-            {totalCount === 0 ? "单词本还是空的" : "没有找到匹配的词条"}
+            {totalCount === 0 ? t("wordbook.emptyTitle") : t("wordbook.noMatchTitle")}
           </h3>
           <p className="ndt-cls-hero-desc">
             {totalCount === 0
-              ? emptyHint ||
-                "在「课前预习」中提取视频难点单词和短语后，点击「加入单词本」即可持久收藏并随时复习导出。"
-              : "请尝试更换搜索关键词或切换筛选状态。"}
+              ? emptyHint || t("wordbook.emptyDesc")
+              : t("wordbook.noMatchDesc")}
           </p>
           {totalCount === 0 && onGoStudy && (
             <button
@@ -255,7 +256,7 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
               className="ndt-cls-btn is-primary"
               onClick={onGoStudy}
             >
-              前往课前预习
+              {t("wordbook.goStudyBtn")}
             </button>
           )}
         </div>
@@ -265,7 +266,7 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
           <aside
             ref={dotRailRef}
             className="ndt-cls-dot-rail"
-            aria-label="单词本复习状态总览"
+            aria-label={t("wordbook.statusRailAria")}
           >
             {(() => {
               const rows = Math.min(items.length, dotRowsPerCol);
@@ -283,10 +284,10 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                     const status = getItemDotStatus(item);
                     const statusLabel =
                       status === "mastered"
-                        ? "已掌握"
+                        ? t("wordbook.statusMastered")
                         : status === "studied"
-                          ? "本次已复习"
-                          : "学习中";
+                          ? t("wordbook.statusReviewed")
+                          : t("wordbook.statusLearning");
                     return (
                       <button
                         key={item.id}
@@ -296,7 +297,7 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                         }`}
                         onClick={() => setActiveItemId(item.id)}
                         title={`${idx + 1}. ${item.term} · ${statusLabel}`}
-                        aria-label={`${idx + 1}. ${item.term}，${statusLabel}`}
+                        aria-label={`${idx + 1}. ${item.term}, ${statusLabel}`}
                         aria-current={isActive ? "true" : undefined}
                       >
                         <span className="ndt-cls-dot-sq" />
@@ -328,8 +329,8 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                         type="button"
                         className="ndt-cls-speak-btn is-icon-only"
                         onClick={() => onSpeak?.(activeItem.term, activeItem)}
-                        title="朗读发音"
-                        aria-label="朗读发音"
+                        title={t("wordbook.speakTerm")}
+                        aria-label={t("wordbook.speakTerm")}
                       >
                         <SpeakerIcon size={16} />
                       </button>
@@ -342,17 +343,21 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                         <span className="ndt-cls-pos-chip">{activeItem.pos}</span>
                       )}
                       <span className="ndt-cls-type-chip">
-                        {activeItem.type === "phrase" ? "短语 / 搭配" : "核心单词"}
+                        {activeItem.type === "phrase"
+                          ? t("wordbook.typePhrase")
+                          : t("wordbook.typeWord")}
                       </span>
                       {activeItem.level && (
                         <span className="ndt-cls-level-chip">{activeItem.level}</span>
                       )}
                       {activeItem.languageLabel && (
-                        <span className="ndt-cls-lang-chip">{activeItem.languageLabel}</span>
+                        <span className="ndt-cls-lang-chip">
+                          {getLanguageName(activeItem.languageLabel)}
+                        </span>
                       )}
                       <span
                         className="ndt-cls-diff-dots"
-                        title={`难度 ${activeItem.difficulty || 4}/5`}
+                        title={t("wordbook.difficultyTitle", { level: activeItem.difficulty || 4 })}
                       >
                         {[1, 2, 3, 4, 5].map((lvl) => (
                           <span
@@ -367,7 +372,7 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                         activeItem.surfaceForm.toLowerCase() !==
                           activeItem.term.toLowerCase() && (
                           <span className="ndt-cls-surface-chip">
-                            字幕原形：
+                            {t("wordbook.surfaceFormPrefix")}
                             <bdi
                               dir="auto"
                               className={
@@ -390,7 +395,7 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                           className="ndt-cls-filter-pill"
                           onClick={() => toggleRevealItem(activeItem.id)}
                         >
-                          重新遮挡
+                          {t("wordbook.hideAgain")}
                         </button>
                       </div>
                     )}
@@ -399,12 +404,12 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                         className="ndt-cls-reveal-mask"
                         onClick={() => toggleRevealItem(activeItem.id)}
                       >
-                        先回想一下它的含义，点击此处或按 Space 键显示释义与用法
+                        {t("wordbook.quizRevealMask")}
                       </div>
                     ) : (
                       <>
                         <p className="ndt-cls-meaning-text">
-                          {activeItem.translation || "暂无释义"}
+                          {activeItem.translation || t("wordbook.noMeaning")}
                         </p>
                         {activeItem.explanation && (
                           <p className="ndt-cls-explanation">{activeItem.explanation}</p>
@@ -417,13 +422,15 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                   {activeItem.videoQuote && (
                     <div className="ndt-cls-section">
                       <div className="ndt-cls-section-head">
-                        <span className="ndt-cls-section-label">视频字幕原句</span>
+                        <span className="ndt-cls-section-label">
+                          {t("wordbook.videoQuoteLabel")}
+                        </span>
                         <div className="ndt-cls-study-actions">
                           <button
                             type="button"
                             className="ndt-cls-speak-btn is-mini"
                             onClick={() => onSpeak?.(activeItem.videoQuote, activeItem)}
-                            title="朗读视频原句"
+                            title={t("wordbook.speakQuote")}
                           >
                             <SpeakerIcon size={13} />
                           </button>
@@ -432,9 +439,11 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                               type="button"
                               className="ndt-cls-time-btn"
                               onClick={() => onSeekVideo(activeItem.videoTime, true)}
-                              title="跳转到视频该句并开始播放"
+                              title={t("wordbook.seekVideoTitle")}
                             >
-                              ▶ {formatSubtitleTime(activeItem.videoTime)} 跳转观看
+                              {t("wordbook.seekVideoBtn", {
+                                time: formatSubtitleTime(activeItem.videoTime),
+                              })}
                             </button>
                           )}
                         </div>
@@ -473,7 +482,7 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                     <div className="ndt-cls-section">
                       <div className="ndt-cls-section-head">
                         <span className="ndt-cls-section-label">
-                          实用例句 ({activeItem.examples.length})
+                          {t("wordbook.examplesLabel", { count: activeItem.examples.length })}
                         </span>
                       </div>
                       <div className="ndt-cls-example-list">
@@ -496,7 +505,7 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                                 type="button"
                                 className="ndt-cls-speak-btn is-mini"
                                 onClick={() => onSpeak?.(ex.sentence, activeItem)}
-                                title="朗读例句"
+                                title={t("wordbook.speakExample")}
                               >
                                 <SpeakerIcon size={13} />
                               </button>
@@ -524,7 +533,7 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                   {/* Source Video Info */}
                   {activeItem.sourceTitle && (
                     <div className="ndt-cls-wb-card-source">
-                      <span>来源视频：</span>
+                      <span>{t("wordbook.sourceVideoPrefix")}</span>
                       {activeItem.sourceUrl ? (
                         <a href={activeItem.sourceUrl} target="_blank" rel="noreferrer">
                           {activeItem.sourceTitle}
@@ -542,7 +551,7 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                 <div className="ndt-cls-footer-left">
                   <label
                     className={`ndt-cls-quiz-toggle ${quizMode ? "is-checked" : ""}`}
-                    title="开启后先遮挡中文释义，按空格键或点击显示"
+                    title={t("wordbook.quizModeTitle")}
                   >
                     <input
                       type="checkbox"
@@ -555,7 +564,7 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                     <span className="ndt-cls-switch-track" aria-hidden="true">
                       <span className="ndt-cls-switch-thumb" />
                     </span>
-                    <span>自测模式（空格翻开）</span>
+                    <span>{t("wordbook.quizModeLabel")}</span>
                   </label>
                 </div>
 
@@ -566,7 +575,7 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                     disabled={activeIndex <= 0}
                     onClick={() => setActiveItemId(items[activeIndex - 1].id)}
                   >
-                    ← 上一个
+                    {t("wordbook.prevItem")}
                   </button>
                   {activeIndex < items.length - 1 ? (
                     <button
@@ -574,11 +583,11 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                       className="ndt-cls-btn"
                       onClick={() => setActiveItemId(items[activeIndex + 1].id)}
                     >
-                      下一个 →
+                      {t("wordbook.nextItem")}
                     </button>
                   ) : (
                     <button type="button" className="ndt-cls-btn" disabled>
-                      已是最后一个
+                      {t("wordbook.lastItem")}
                     </button>
                   )}
                 </div>
@@ -588,20 +597,22 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                     type="button"
                     className={`ndt-cls-btn ${activeItem.mastered ? "is-saved" : ""}`}
                     onClick={() => onToggleMastered?.(activeItem)}
-                    title="快捷键 V"
+                    title={t("wordbook.masteredHotkey")}
                   >
                     <CheckIcon size={14} />
-                    <span>{activeItem.mastered ? "已掌握" : "标记已掌握"}</span>
+                    <span>
+                      {activeItem.mastered ? t("wordbook.mastered") : t("wordbook.markMastered")}
+                    </span>
                   </button>
 
                   <button
                     type="button"
                     className="ndt-cls-btn is-danger-ghost"
                     onClick={() => onRemove?.(activeItem)}
-                    title="移出单词本"
+                    title={t("wordbook.removeTitle")}
                   >
                     <TrashIcon size={13} />
-                    <span>移出</span>
+                    <span>{t("wordbook.remove")}</span>
                   </button>
                 </div>
               </div>
@@ -646,7 +657,9 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                           <span className="ndt-cls-level-chip">{item.level}</span>
                         )}
                         {item.languageLabel && (
-                          <span className="ndt-cls-lang-chip">{item.languageLabel}</span>
+                          <span className="ndt-cls-lang-chip">
+                            {getLanguageName(item.languageLabel)}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -654,7 +667,7 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                       type="button"
                       className="ndt-cls-speak-btn is-mini"
                       onClick={() => onSpeak?.(item.term, item)}
-                      title="朗读"
+                      title={t("wordbook.speakShort")}
                     >
                       <SpeakerIcon size={13} />
                     </button>
@@ -681,7 +694,7 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
 
                   {item.sourceTitle && (
                     <div className="ndt-cls-grid-source" title={item.sourceTitle}>
-                      <span>来源：</span>
+                      <span>{t("wordbook.sourceShortPrefix")}</span>
                       {item.sourceUrl ? (
                         <a href={item.sourceUrl} target="_blank" rel="noreferrer">
                           {item.sourceTitle}
@@ -701,7 +714,7 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                         onViewModeChange?.("focus");
                       }}
                     >
-                      详情学习 →
+                      {t("wordbook.detailStudyBtn")}
                     </button>
 
                     <div className="ndt-cls-wb-actions">
@@ -711,15 +724,17 @@ export const WordbookBoard = React.forwardRef(function WordbookBoard(
                         onClick={() => onToggleMastered?.(item)}
                       >
                         <CheckIcon size={12} />
-                        <span>{item.mastered ? "已掌握" : "标记掌握"}</span>
+                        <span>
+                          {item.mastered ? t("wordbook.mastered") : t("wordbook.markMasteredShort")}
+                        </span>
                       </button>
                       <button
                         type="button"
                         className="ndt-cls-btn is-sm is-danger-ghost"
                         onClick={() => onRemove?.(item)}
-                        title="移出单词本"
+                        title={t("wordbook.removeTitle")}
                       >
-                        移出
+                        {t("wordbook.remove")}
                       </button>
                     </div>
                   </div>

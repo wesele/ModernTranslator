@@ -10,6 +10,7 @@ import { pickRecommendedStudyTrack } from "../shared/wordbook.js";
 import { isolateBidiInline } from "../shared/textScript.js";
 import { g2 as defaultOptions } from "../shared/constants/defaults.js";
 import * as messaging from "../shared/messaging/index.js";
+import { t, subscribeUiLocale, getUiLocale } from "../shared/i18n/index.js";
 
 const WRAP_ID = "ndt-video-controls-wrap";
 const BTN_ID = "ndt-video-classroom-btn";
@@ -457,7 +458,7 @@ function createControlsGroup(platform, handlers) {
     counterEl.setAttribute("role", "button");
     counterEl.setAttribute("tabindex", "0");
   }
-  counterEl.setAttribute("aria-label", "当前字幕句数");
+  counterEl.setAttribute("aria-label", t("videoCtrl.counterAria"));
   counterEl.setAttribute("data-hcfy-ignore", "1");
 
   const counterText = document.createElement("span");
@@ -466,7 +467,7 @@ function createControlsGroup(platform, handlers) {
 
   const counterTip = document.createElement("span");
   counterTip.className = "ndt-video-btn-tip";
-  counterTip.textContent = "正在加载字幕...";
+  counterTip.textContent = t("videoCtrl.loadingSubtitles");
 
   counterEl.appendChild(counterText);
   counterEl.appendChild(counterTip);
@@ -498,14 +499,17 @@ function createControlsGroup(platform, handlers) {
       btn.setAttribute("role", "button");
       btn.setAttribute("tabindex", "0");
     }
-    btn.setAttribute("aria-label", isPrev ? "上一句 (快捷键 <)" : "下一句 (快捷键 >)");
+    btn.setAttribute(
+      "aria-label",
+      isPrev ? t("videoCtrl.prevSentence") : t("videoCtrl.nextSentence")
+    );
     btn.setAttribute("data-hcfy-ignore", "1");
 
     btn.appendChild(createArrowSvg(direction));
 
     const tip = document.createElement("span");
     tip.className = "ndt-video-btn-tip";
-    tip.textContent = isPrev ? "上一句 (快捷键 <)" : "下一句 (快捷键 >)";
+    tip.textContent = isPrev ? t("videoCtrl.prevSentence") : t("videoCtrl.nextSentence");
     btn.appendChild(tip);
 
     const onNavActivate = (event) => {
@@ -541,7 +545,7 @@ function createControlsGroup(platform, handlers) {
     classroomBtn.setAttribute("role", "button");
     classroomBtn.setAttribute("tabindex", "0");
   }
-  classroomBtn.setAttribute("aria-label", "语言课堂");
+  classroomBtn.setAttribute("aria-label", t("videoCtrl.classroomLabel"));
   classroomBtn.setAttribute("data-hcfy-ignore", "1");
 
   const inner = document.createElement("span");
@@ -549,12 +553,12 @@ function createControlsGroup(platform, handlers) {
 
   const img = document.createElement("img");
   img.src = chrome.runtime.getURL("icons/icon48.png");
-  img.alt = "语言课堂";
+  img.alt = t("videoCtrl.classroomLabel");
   inner.appendChild(img);
 
   const classroomTip = document.createElement("span");
   classroomTip.className = "ndt-video-btn-tip";
-  classroomTip.textContent = "语言课堂 · 课前难词预习";
+  classroomTip.textContent = t("videoCtrl.classroomTip");
 
   classroomBtn.appendChild(inner);
   classroomBtn.appendChild(classroomTip);
@@ -593,6 +597,8 @@ function createControlsGroup(platform, handlers) {
     nextBtn: nextNav.btn,
     nextTip: nextNav.tip,
     classroomBtn,
+    classroomImg: img,
+    classroomTip,
   };
 }
 
@@ -694,9 +700,17 @@ export function mountVideoClassroomButton(onOpenClassroom, options = {}) {
     const idx = total > 0 ? getCurrentNavState().index : -1;
     const displayCurrent = idx >= 0 ? idx + 1 : 0;
 
-    const renderKey = `${status}|${reason}|${trackLabel}|${displayCurrent}|${total}`;
+    const locale = getUiLocale();
+    const renderKey = `${locale}|${status}|${reason}|${trackLabel}|${displayCurrent}|${total}`;
     if (renderKey === lastRenderedKey) return;
     lastRenderedKey = renderKey;
+
+    uiRefs.counterEl.setAttribute("aria-label", t("videoCtrl.counterAria"));
+    uiRefs.prevBtn.setAttribute("aria-label", t("videoCtrl.prevSentence"));
+    uiRefs.nextBtn.setAttribute("aria-label", t("videoCtrl.nextSentence"));
+    uiRefs.classroomBtn.setAttribute("aria-label", t("videoCtrl.classroomLabel"));
+    if (uiRefs.classroomImg) uiRefs.classroomImg.alt = t("videoCtrl.classroomLabel");
+    if (uiRefs.classroomTip) uiRefs.classroomTip.textContent = t("videoCtrl.classroomTip");
 
     if (total > 0) {
       uiRefs.counterText.textContent = `${displayCurrent}/${total}`;
@@ -707,10 +721,10 @@ export function mountVideoClassroomButton(onOpenClassroom, options = {}) {
       const trackPrefix = trackLabel ? `${isolateBidiInline(trackLabel)} · ` : "";
       uiRefs.counterTip.textContent =
         displayCurrent > 0
-          ? `${trackPrefix}第 ${displayCurrent}/${total} 句 · 点击重听本句`
-          : `${trackPrefix}共 ${total} 句 · 按 > 跳到第 1 句`;
-      uiRefs.prevTip.textContent = "上一句 (快捷键 <)";
-      uiRefs.nextTip.textContent = "下一句 (快捷键 >)";
+          ? `${trackPrefix}${t("videoCtrl.counterCurrentTip", { current: displayCurrent, total })}`
+          : `${trackPrefix}${t("videoCtrl.counterTotalTip", { total })}`;
+      uiRefs.prevTip.textContent = t("videoCtrl.prevSentence");
+      uiRefs.nextTip.textContent = t("videoCtrl.nextSentence");
       return;
     }
 
@@ -720,24 +734,24 @@ export function mountVideoClassroomButton(onOpenClassroom, options = {}) {
 
     if (status === "loading") {
       uiRefs.counterText.textContent = "...";
-      uiRefs.counterTip.textContent = "正在加载字幕...";
-      uiRefs.prevTip.textContent = "上一句 (快捷键 <) · 字幕加载中";
-      uiRefs.nextTip.textContent = "下一句 (快捷键 >) · 字幕加载中";
+      uiRefs.counterTip.textContent = t("videoCtrl.loadingSubtitles");
+      uiRefs.prevTip.textContent = t("videoCtrl.prevLoading");
+      uiRefs.nextTip.textContent = t("videoCtrl.nextLoading");
     } else if (reason === "NEED_LOGIN") {
       uiRefs.counterText.textContent = "0/0";
-      uiRefs.counterTip.textContent = "登录 B 站后可加载字幕 · 点击重试";
-      uiRefs.prevTip.textContent = "上一句 (快捷键 <) · 需登录加载字幕";
-      uiRefs.nextTip.textContent = "下一句 (快捷键 >) · 需登录加载字幕";
+      uiRefs.counterTip.textContent = t("videoCtrl.needLoginCounter");
+      uiRefs.prevTip.textContent = t("videoCtrl.prevNeedLogin");
+      uiRefs.nextTip.textContent = t("videoCtrl.nextNeedLogin");
     } else if (reason === "RATE_LIMITED") {
       uiRefs.counterText.textContent = "0/0";
-      uiRefs.counterTip.textContent = "YouTube 字幕请求受限，请稍后点击重试";
-      uiRefs.prevTip.textContent = "上一句 (快捷键 <) · 请求受限，请稍后重试";
-      uiRefs.nextTip.textContent = "下一句 (快捷键 >) · 请求受限，请稍后重试";
+      uiRefs.counterTip.textContent = t("videoCtrl.rateLimitedCounter");
+      uiRefs.prevTip.textContent = t("videoCtrl.prevRateLimited");
+      uiRefs.nextTip.textContent = t("videoCtrl.nextRateLimited");
     } else {
       uiRefs.counterText.textContent = "0/0";
-      uiRefs.counterTip.textContent = "当前视频暂无可用字幕 · 点击重试";
-      uiRefs.prevTip.textContent = "上一句 (快捷键 <) · 暂无可用字幕";
-      uiRefs.nextTip.textContent = "下一句 (快捷键 >) · 暂无可用字幕";
+      uiRefs.counterTip.textContent = t("videoCtrl.noSubtitleCounter");
+      uiRefs.prevTip.textContent = t("videoCtrl.prevNoSubtitle");
+      uiRefs.nextTip.textContent = t("videoCtrl.nextNoSubtitle");
     }
   };
 
@@ -1056,6 +1070,11 @@ export function mountVideoClassroomButton(onOpenClassroom, options = {}) {
     );
   }
 
+  const unsubscribeLocale = subscribeUiLocale(() => {
+    lastRenderedKey = "";
+    renderNavUi();
+  });
+
   window.addEventListener("keydown", onKeyDown, true);
   window.addEventListener("popstate", scheduleSync);
   window.addEventListener("hashchange", scheduleSync);
@@ -1065,6 +1084,7 @@ export function mountVideoClassroomButton(onOpenClassroom, options = {}) {
 
   return () => {
     destroyed = true;
+    unsubscribeLocale();
     clearRetryTimer();
     if (hotkeyFlashTimers.prev) window.clearTimeout(hotkeyFlashTimers.prev);
     if (hotkeyFlashTimers.next) window.clearTimeout(hotkeyFlashTimers.next);

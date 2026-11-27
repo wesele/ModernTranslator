@@ -19,7 +19,11 @@ import {
   saveBatchTranslationCache,
 } from "./translationCache.js";
 import { t, getServiceDisplayName } from "../shared/i18n/index.js";
-import { extractApiErrorMessage, isLikelyApiErrorText } from "../shared/llmErrorUtils.js";
+import {
+  extractApiErrorMessage,
+  isLikelyApiErrorText,
+  isRateLimitOrOverload,
+} from "../shared/llmErrorUtils.js";
 
 function safePost(port, msg) {
   try {
@@ -164,7 +168,7 @@ async function consumeSSEStream(response, extractDelta, onChunkText, signal) {
 }
 
 async function streamDirectOpenAIChat(
-  { endpoint, apiKey, model, customPrompt, streamEnabled = true },
+  { endpoint, apiKey, model, customPrompt, streamEnabled = true, isOfficial = false },
   batchInput,
   onChunkText,
   signal
@@ -193,7 +197,11 @@ async function streamDirectOpenAIChat(
   });
 
   if (!res.ok) {
-    throw new Error(await readErrorMessage(res));
+    const detail = await readErrorMessage(res);
+    if (isOfficial && isRateLimitOrOverload(res.status, detail)) {
+      throw new Error(t("error.officialBusy", { detail: String(detail).slice(0, 160) }));
+    }
+    throw new Error(detail);
   }
 
   if (!shouldStream) {
@@ -270,6 +278,7 @@ async function streamOfficialLlm(batchInput, onChunkText, signal) {
           apiKey,
           model,
           customPrompt: stored.officialLLMPrompt,
+          isOfficial: true,
           streamEnabled:
             batchInput?.streamEnabled !== undefined
               ? batchInput.streamEnabled

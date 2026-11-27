@@ -9,7 +9,7 @@ import {
   resolveChatCompletionsUrl,
 } from "../shared/openaiUtils.js";
 import { runWithLlmConcurrency } from "./llmConcurrency.js";
-import { extractApiErrorMessage } from "../shared/llmErrorUtils.js";
+import { extractApiErrorMessage, isRateLimitOrOverload } from "../shared/llmErrorUtils.js";
 import { getServiceDisplayName, t } from "../shared/i18n/index.js";
 import { mapSubtitleLangToTtsSource } from "../shared/wordbook.js";
 import { formatSubtitleTime } from "../shared/subtitleTimeline.js";
@@ -178,7 +178,7 @@ function salvageTruncatedItems(text) {
 function parseClassroomJson(rawContent) {
   const cleaned = stripThinkAndFences(rawContent);
   if (!cleaned) {
-    throw new Error("大模型返回了空内容，请重试或切换模型。");
+    throw new Error(t("classroom.errEmptyLlmResponse"));
   }
 
   const tryDirect = (candidate) => {
@@ -226,7 +226,7 @@ function parseClassroomJson(rawContent) {
   }
 
   if (!parsed || !Array.isArray(parsed.items) || parsed.items.length === 0) {
-    throw new Error("未能从大模型回复中解析出有效词条，请点击重试或切换能力更强的模型。");
+    throw new Error(t("classroom.errParseFailed"));
   }
 
   return parsed;
@@ -446,7 +446,7 @@ async function resolveLlmConfig(requestedApiCode) {
     };
   }
 
-  const err = new Error("请先在扩展配置页配置一个大模型服务（如友情赞助商或自定义 OpenAI 兼容服务）。");
+  const err = new Error(t("classroom.errNeedLlmConfig"));
   err.needConfig = true;
   throw err;
 }
@@ -459,7 +459,7 @@ async function consumeClassroomSSE(response, onDelta, signal) {
     try {
       json = rawText ? JSON.parse(rawText) : null;
     } catch {
-      throw new Error(rawText.slice(0, 200) || "无效 JSON 响应");
+      throw new Error(rawText.slice(0, 200) || t("classroom.errInvalidJson"));
     }
     const apiErr = extractApiErrorMessage(json);
     if (apiErr) throw new Error(apiErr.slice(0, 240));
@@ -600,7 +600,7 @@ async function requestClassroomCompletion(llmCfg, prompt, { signal, onDelta } = 
       throw err;
     }
     if (err?.name === "AbortError") {
-      throw new Error(`【${llmCfg.serviceName}】分析字幕超时，请重试或切换响应更快的模型。`);
+      throw new Error(t("classroom.errTimeout", { name: llmCfg.serviceName }));
     }
     throw new Error(
       t("error.networkFailed", { name: llmCfg.serviceName, msg: err?.message || String(err) })
@@ -623,7 +623,13 @@ async function requestClassroomCompletion(llmCfg, prompt, { signal, onDelta } = 
           detail = rawText.slice(0, 240);
         }
       }
-      const err = new Error(t("error.serverReturned", { name: llmCfg.serviceName, detail }));
+      const isOfficialBusy =
+        llmCfg.apiCode === ServiceId.OfficialLLM && isRateLimitOrOverload(res.status, detail);
+      const err = new Error(
+        isOfficialBusy
+          ? t("error.officialBusy", { detail: String(detail).slice(0, 160) })
+          : t("error.serverReturned", { name: llmCfg.serviceName, detail })
+      );
       if (res.status === 401 || res.status === 403) err.needConfig = true;
       throw err;
     }
@@ -631,7 +637,7 @@ async function requestClassroomCompletion(llmCfg, prompt, { signal, onDelta } = 
     if (useStream) {
       const content = await consumeClassroomSSE(res, onDelta, controller.signal);
       if (!content || typeof content !== "string") {
-        throw new Error(`【${llmCfg.serviceName}】未返回有效文本内容，请稍后重试。`);
+        throw new Error(t("classroom.errEmptyText", { name: llmCfg.serviceName }));
       }
       return content;
     }
@@ -644,7 +650,7 @@ async function requestClassroomCompletion(llmCfg, prompt, { signal, onDelta } = 
       throw new Error(
         t("error.serverReturned", {
           name: llmCfg.serviceName,
-          detail: rawText.slice(0, 200) || "无效 JSON 响应",
+          detail: rawText.slice(0, 200) || t("classroom.errInvalidJson"),
         })
       );
     }
@@ -658,7 +664,7 @@ async function requestClassroomCompletion(llmCfg, prompt, { signal, onDelta } = 
 
     const content = json?.choices?.[0]?.message?.content;
     if (!content || typeof content !== "string") {
-      throw new Error(`【${llmCfg.serviceName}】未返回有效文本内容，请稍后重试。`);
+      throw new Error(t("classroom.errEmptyText", { name: llmCfg.serviceName }));
     }
     return content;
   } finally {
@@ -753,7 +759,7 @@ export async function extractClassroomVocabulary(
     if (cleanedCues.length === 0) {
       return {
         ok: false,
-        error: "所选字幕轨道为空，请选择其他包含字幕内容的轨道。",
+        error: t("classroom.errEmptyTrack"),
       };
     }
 
@@ -966,7 +972,7 @@ export async function extractClassroomVocabulary(
     if (items.length === 0) {
       return {
         ok: false,
-        error: "大模型未能提取出有效单词或短语，请尝试重新提取。",
+        error: t("classroom.errNoValidItems"),
       };
     }
 
@@ -1011,11 +1017,11 @@ export async function extractClassroomVocabulary(
     return payload;
   } catch (err) {
     if (signal?.aborted || err?.name === "AbortError") {
-      return { ok: false, aborted: true, error: "已取消分析" };
+      return { ok: false, aborted: true, error: t("classroom.errCancelled") };
     }
     return {
       ok: false,
-      error: err?.message || "提取难点词汇失败，请稍后重试。",
+      error: err?.message || t("classroom.toastExtractFailed"),
       needConfig: Boolean(err?.needConfig),
     };
   }
@@ -1046,7 +1052,7 @@ export function registerClassroomStreamHandler() {
       } else {
         safePost(port, {
           type: "error",
-          error: res?.error || "提取难点词汇失败，请重试。",
+          error: res?.error || t("classroom.toastExtractFailed"),
           needConfig: Boolean(res?.needConfig),
           aborted: Boolean(res?.aborted),
         });

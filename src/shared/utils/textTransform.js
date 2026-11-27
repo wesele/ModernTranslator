@@ -1,3 +1,5 @@
+import createDebug from "debug";
+const textTransformLog = createDebug("ndt:textTransform");
 const n = /^[A-Z]?[a-z]+([A-Z][a-z]*)+$/,
   s = /^([A-Za-z]+_)+[A-Za-z]+$/;
 function r(e, t) {
@@ -12,7 +14,7 @@ function r(e, t) {
           try {
             a = new RegExp(t.pattern, t.flags);
           } catch (t) {
-            return (console.error("创建正则表达式失败：", t), e);
+            return (textTransformLog("创建正则表达式失败：%o", t), e);
           }
           return e.replace(a, t.replaceTo || "");
         }, a)),

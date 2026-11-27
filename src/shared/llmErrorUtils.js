@@ -19,6 +19,25 @@ const SERVICE_PREFIX_ERROR_RE =
   /^【[^】]{1,40}】.*?(?:\b429\b|too\s+many\s+requests|rate[\s_-]*limit|quota|error|failed|错误|失败|限流|超限)/i;
 
 /**
+ * Detect whether an HTTP error response indicates rate limiting, quota
+ * exhaustion, or upstream overload (used to show a friendly "busy" hint
+ * for the shared Community Sponsor endpoint).
+ */
+export function isRateLimitOrOverload(status, detail = "") {
+  const code = Number(status);
+  if (code === 429 || code === 502 || code === 503 || code === 504 || code === 529) {
+    return true;
+  }
+  const raw = String(detail ?? "");
+  if (!raw) return false;
+  return (
+    RATE_LIMIT_PHRASE_RE.test(raw) ||
+    HTTP_429_TAG_RE.test(raw) ||
+    CODE_429_WITH_CONTEXT_RE.test(raw)
+  );
+}
+
+/**
  * Extract an API error message from a parsed JSON response or SSE chunk,
  * supporting OpenAI, New-API/One-API, CLIProxyAPI, Anthropic, Tencent, and
  * generic HTTP-status-wrapped JSON payloads.

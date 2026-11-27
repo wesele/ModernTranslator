@@ -25,7 +25,11 @@ function j(e) {
           const a = e.map((e) => e.path[0]),
             t = pick(s, a),
             n = applyPatches(t, e);
-          chrome.storage.local.set(n);
+          try {
+            chrome.storage.local.set(n).catch(() => {});
+          } catch {
+            // ignore invalidated extension context
+          }
         });
       });
     }, []);

@@ -83,6 +83,7 @@ function C(e) {
       return ((d = c.childNodes[u]), (l = m - h), true);
     h = t;
   });
+  if (!r || !d) return undefined;
   const D = document.createRange();
   return (D.setStart(r, F), D.setEnd(d, l), D);
 }
@@ -187,7 +188,10 @@ function m(e, u) {
         (E = undefined);
   }
   s =
-    !c && !!document.activeElement && !!document.activeElement.closest('[contenteditable="true"]');
+    !c &&
+    !!document.activeElement &&
+    typeof document.activeElement.closest === "function" &&
+    !!document.activeElement.closest('[contenteditable="true"]');
   const a =
       !E && e
         ? {
@@ -237,12 +241,40 @@ function m(e, u) {
   };
 }
 function D() {
+  let frameIndex = -1;
+  if (!mod_65040.$) {
+    try {
+      frameIndex = Array.prototype.indexOf.call(window.parent.frames, window);
+    } catch {
+      frameIndex = -1;
+    }
+  }
   return {
-    frameIndex: mod_65040.$ ? -1 : Array.prototype.indexOf.call(window.parent.frames, window),
+    frameIndex,
     href: window.location.href,
     scrollTop: window.pageYOffset,
     scrollLeft: window.pageXOffset,
   };
+}
+function findFrameElementInRoot(root, targetWindow) {
+  if (!root || typeof root.querySelectorAll !== "function") return null;
+  const frames = root.querySelectorAll("iframe,frame");
+  for (let idx = 0; idx < frames.length; idx += 1) {
+    try {
+      if (frames[idx].contentWindow === targetWindow) return frames[idx];
+    } catch {
+      // ignore cross-origin or detached iframe errors
+    }
+  }
+  const allNodes = root.querySelectorAll("*");
+  for (let idx = 0; idx < allNodes.length; idx += 1) {
+    const shadow = allNodes[idx].shadowRoot;
+    if (shadow) {
+      const found = findFrameElementInRoot(shadow, targetWindow);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 function p(e, u, t) {
   return {
@@ -278,7 +310,8 @@ class x extends _b_27429 {
       this.d?.("初始化完成"));
   }
   handleDown = (e) => {
-    if (!this.getElement().contains(e.target) && !isEventInClassroomModal(e))
+    const rootEl = this.getElement();
+    if ((!rootEl || !rootEl.contains(e.target)) && !isEventInClassroomModal(e))
       return void this.d?.(
         "pointerdown 事件发生在不在监听范围内的元素上，忽略。",
         this.getElement,
@@ -440,7 +473,7 @@ class M {
       document.addEventListener(
         "pointerdown",
         (e) => {
-          (mod_65040.$ && "__hcfy__" === e.target.id && !isEventInClassroomBackdrop(e)) ||
+          (mod_65040.$ && "__hcfy__" === e.target?.id && !isEventInClassroomBackdrop(e)) ||
             this.postMsgToTopmostFrame({
               type: "HCFY_SELECTION_EVENT_MOUSEDOWN",
               event: pick(e, ["target.id"]),
@@ -475,6 +508,7 @@ class M {
             e.precise,
             e.event
           );
+          if (!mod_65040.$ && u.data.path[0]?.frameIndex < 0) return;
           this.bubbleInfoMsg(u);
         });
       }),
@@ -486,27 +520,30 @@ class M {
             const e = (function (e) {
               const u = e.data,
                 t = last(u.path);
-              if (!t) return;
-              const n = document.querySelectorAll("iframe,frame");
-              let o;
-              const i = window.frames[t.frameIndex];
-              if (
-                (i
-                  ? Array.prototype.some.call(n, (e) => {
-                      if (e.contentWindow === i) return ((o = e), true);
-                    })
-                  : console.error("【无登翻译】window.frames[childFrameInfo.frameIndex] 为空"),
-                !o)
-              )
-                return void console.error("【无登翻译】找不到对应的 iframe 元素。", t);
+              if (!t || typeof t.frameIndex !== "number" || t.frameIndex < 0) return;
+              let i;
+              try {
+                i = window.frames[t.frameIndex];
+              } catch {
+                i = undefined;
+              }
+              if (!i) {
+                S("子 iframe 已移除或不可访问，忽略本次上报", t);
+                return;
+              }
+              const o = findFrameElementInRoot(document, i);
+              if (!o) {
+                S("未找到对应的 iframe 元素（可能已移除或位于封闭 Shadow DOM），忽略本次上报", t);
+                return;
+              }
               t.rect = o.getBoundingClientRect();
               const s = window.getComputedStyle(o);
               return (
                 (t.computedStyles = {
-                  paddingLeft: Number(s.paddingLeft.slice(0, -2)),
-                  paddingTop: Number(s.paddingTop.slice(0, -2)),
-                  borderLeftWidth: Number(s.borderLeftWidth.slice(0, -2)),
-                  borderTopWidth: Number(s.borderTopWidth.slice(0, -2)),
+                  paddingLeft: Number.parseFloat(s.paddingLeft) || 0,
+                  paddingTop: Number.parseFloat(s.paddingTop) || 0,
+                  borderLeftWidth: Number.parseFloat(s.borderLeftWidth) || 0,
+                  borderTopWidth: Number.parseFloat(s.borderTopWidth) || 0,
                 }),
                 u.path.push(D()),
                 e
@@ -526,7 +563,7 @@ class M {
           reason: "proactive",
           mid: e.mid,
         });
-        return (mod_65040.$ || this.bubbleInfoMsg(u), u);
+        return (mod_65040.$ || (u.data.path[0]?.frameIndex >= 0 && this.bubbleInfoMsg(u)), u);
       }
     }
   }
@@ -538,7 +575,7 @@ class M {
         meta: e.meta,
       };
       this.postMsgToTopmostFrame(u);
-    } else this.messagePassingBetweenFrames.tell(e, "parent");
+    } else this.messagePassingBetweenFrames.tell(e, "parent").catch(() => {});
   }
 }
 export { M as Z };

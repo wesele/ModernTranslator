@@ -3,7 +3,7 @@ import isEmpty from "lodash/isEmpty";
 const a = createDebug("utils/watchStorage");
 const i = [];
 function c(e, t, n, o = "local") {
-  return (
+  try {
     chrome.storage[o]
       .get(e)
       .then((e) => {
@@ -17,12 +17,15 @@ function c(e, t, n, o = "local") {
           area: o,
           keys: n,
         });
-      }),
-    () => {
-      const n = i.findIndex((n) => n.onChange === t && n.area === o && n.defaultOptions === e);
-      return n >= 0 && (i.splice(n, 1), true);
-    }
-  );
+      })
+      .catch(() => {});
+  } catch {
+    // ignore invalidated extension context
+  }
+  return () => {
+    const n = i.findIndex((n) => n.onChange === t && n.area === o && n.defaultOptions === e);
+    return n >= 0 && (i.splice(n, 1), true);
+  };
 }
 chrome.storage.onChanged.addListener((e, t) => {
   (a("storage.onChanged 事件调用了", e, t),

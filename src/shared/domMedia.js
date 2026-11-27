@@ -5,6 +5,8 @@ import { L as retryAsync } from "./utils/retryAsync.js";
 import { MESSAGES } from "./i18n/messages.js";
 import { normalizeUiLocale, detectDefaultUiLocale } from "./i18n/locales.js";
 import { getLocalizedLanguageName } from "./i18n/languageNames.js";
+import createDebug from "debug";
+const domMediaLog = createDebug("ndt:domMedia");
 
 function domMediaT(key, vars, locale) {
   const loc = normalizeUiLocale(locale) || detectDefaultUiLocale();
@@ -227,7 +229,7 @@ export function playWithSpeech(text, options) {
               : null);
           if (matched) utter.voice = matched;
         } catch (err) {
-          console.error("查找系统语音朗读者失败：", err);
+          domMediaLog("查找系统语音朗读者失败：%o", err);
         }
       } else if (isMac && systemVoiceLang === "en-US") {
         const noveltyNames = [
@@ -249,7 +251,7 @@ export function playWithSpeech(text, options) {
           );
           if (matched) utter.voice = matched;
         } catch (err) {
-          console.error("选择系统语音朗读者失败：", err);
+          domMediaLog("选择系统语音朗读者失败：%o", err);
         }
       } else {
         try {

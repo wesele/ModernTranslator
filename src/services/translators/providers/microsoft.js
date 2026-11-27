@@ -3,6 +3,8 @@ import * as mod_72431 from "../../../shared/constants/services.js";
 import * as mod_86795 from "./microsoftClient.js";
 import * as mod_51964 from "../../../shared/errors/handleHttpError.js";
 import * as mod_29828 from "../microsoftLangMap.js";
+import createDebug from "debug";
+const msLog = createDebug("translator:microsoft");
 const c = {
   id: mod_72431.VI.Microsoft,
   name: "微软翻译",
@@ -44,7 +46,7 @@ class l extends mod_34047.c {
       try {
         s.result = t[0].translations[0].text.split("\n");
       } catch (e) {
-        console.error("解析微软翻译结果时出错：", e);
+        msLog("解析微软翻译结果时出错：%o", e);
       }
     return s;
   }

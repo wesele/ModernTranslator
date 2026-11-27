@@ -1,8 +1,11 @@
+import createDebug from "debug";
+const parseJsonLog = createDebug("ndt:tryParseJson");
+
 export function tryParseJson(text) {
   try {
     return JSON.parse(text);
   } catch (err) {
-    console.error("JSON 解析失败，返回原始字符串：", err);
+    parseJsonLog("JSON 解析失败，返回原始字符串：%o", err);
     return text;
   }
 }

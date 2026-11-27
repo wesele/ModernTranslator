@@ -13,7 +13,7 @@
    },
    "description": {
       "description": "Extension description.",
-      "message": "완전 무료·비영리 드래그 및 웹페이지 전체 번역 확장 프로그램. 이중 언어 보기, LLM 스트리밍 일괄 번역, Microsoft/Google 엔진, 커뮤니티 스폰서 및 OpenAI 호환 API를 지원합니다."
+      "message": "무료·광고 없는 드래그 및 웹페이지 이중 언어 번역. YouTube/Bilibili 자막으로 외국어 학습, 단어장, LLM 스트리밍, Google/Microsoft/OpenAI 지원."
    },
    "name": {
       "description": "Extension name.",

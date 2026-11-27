@@ -1,5 +1,6 @@
 import { formatSubtitleTime } from "./subtitleTimeline.js";
 import { normalizeArabicText, stripBidiControls } from "./textScript.js";
+import { t } from "./i18n/index.js";
 
 const SECTION_TARGET_DURATION_SEC = 5 * 60; // 5 minutes per section
 const MAX_SECTION_COUNT = 5; // At most 5 sections
@@ -141,7 +142,7 @@ export function planSubtitleSections(rawCues = [], difficultyRatio = 20) {
       index: sections.length,
       number: sections.length + 1,
       id: `sec-${sections.length + 1}`,
-      title: `第 ${sections.length + 1} 节`,
+      title: t("classroom.sectionTitle", { n: sections.length + 1 }),
       startCueIndex,
       endCueIndex,
       cueCount: slice.length,

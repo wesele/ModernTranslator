@@ -5,6 +5,7 @@ import * as mod_67116 from "../messaging/index.js";
 import { usePrevious } from "react-use";
 import uniqueId from "lodash/uniqueId";
 import difference from "lodash/difference";
+import { t } from "../i18n/index.js";
 
 const INITIAL_STATE = {
   results: {},
@@ -61,7 +62,7 @@ function useTranslateResults(text, apis, source, show, onTranslate) {
         apiId,
         result: {
           text: qText,
-          error: { message: err?.message || "未知错误" },
+          error: { message: err?.message || t("error.unknown") },
         },
       });
       return;
@@ -72,7 +73,11 @@ function useTranslateResults(text, apis, source, show, onTranslate) {
         if (apiId === "GoogleWeb") {
           const detected = res.from;
           if (detected && detected !== "中文(简体)") {
-            chrome.storage.local.set({ latestSource: detected });
+            try {
+              chrome.storage.local.set({ latestSource: detected }).catch(() => {});
+            } catch {
+              // ignore invalidated extension context
+            }
           }
         }
         dispatch({ type: "set result", apiId, result: res });

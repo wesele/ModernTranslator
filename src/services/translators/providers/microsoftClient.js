@@ -36,9 +36,9 @@ async function c(e, t, n) {
       if (e.response)
         try {
           const n = await e.response.json();
-          t = ` 状态码: ${e.response.status} (${e.response.statusText})\n响应: ${JSON.stringify(n, null, 2)}\n`;
+          t = ` HTTP ${e.response.status} (${e.response.statusText})\n${JSON.stringify(n, null, 2)}\n`;
         } catch {
-          t = ` 状态码: ${e.response.status} (${e.response.statusText})\n`;
+          t = ` HTTP ${e.response.status} (${e.response.statusText})\n`;
         }
       else t = `: ${e.message}`;
       throw new Error(tr("error.msFailed", { detail: t }));

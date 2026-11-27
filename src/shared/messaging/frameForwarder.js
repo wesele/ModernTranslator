@@ -4,13 +4,17 @@ function s() {
   if (window.self === window.top) return "top";
   const e = [];
   let u = window.self;
-  do {
-    const t = u.parent;
-    if (!t) return "isolation";
-    const n = Array.prototype.indexOf.call(t.frames, u);
-    if (n < 0) return "isolation";
-    (e.unshift(n), (u = t));
-  } while (u !== window.top);
+  try {
+    do {
+      const t = u.parent;
+      if (!t || t === u) return "isolation";
+      const n = Array.prototype.indexOf.call(t.frames, u);
+      if (n < 0) return "isolation";
+      (e.unshift(n), (u = t));
+    } while (u !== window.top);
+  } catch {
+    return "isolation";
+  }
   return e;
 }
 let r;
@@ -19,7 +23,7 @@ class F extends _A_27429 {
     if (r) return r;
     (super(),
       (r = this),
-      chrome.runtime.onMessage.addListener((e) => {
+      chrome?.runtime?.onMessage?.addListener((e) => {
         "forward between frames" === e?.action &&
           (function (e) {
             const u = e.target,
@@ -28,7 +32,10 @@ class F extends _A_27429 {
               ? !isEqual(e.senderFramePosition, t)
               : "top" === u
                 ? "top" === t
-                : "string" != typeof t && t.length === u.length && t.every((e, t) => e === u[t]);
+                : Array.isArray(t) &&
+                  Array.isArray(u) &&
+                  t.length === u.length &&
+                  t.every((e, idx) => e === u[idx]);
           })(e) &&
           this.emit("message", e.data, e.senderFramePosition, e.target);
       }));
@@ -36,8 +43,7 @@ class F extends _A_27429 {
   tell(e, u) {
     const t = s();
     if ("parent" === u) {
-      if ("top" === t || "isolation" === t)
-        return Promise.reject(new Error(t + " 窗口不能发送消息给 parent。"));
+      if ("top" === t || "isolation" === t) return Promise.resolve();
       (u = t.slice(0, -1)).length || (u = "top");
     }
     const n = {
@@ -46,9 +52,13 @@ class F extends _A_27429 {
       data: e,
       senderFramePosition: t,
     };
-    return (typeof browser !== "undefined" ? browser : chrome).runtime
-      .sendMessage(n)
-      .catch(() => {});
+    try {
+      const extApi = typeof browser !== "undefined" ? browser : chrome;
+      if (!extApi?.runtime?.sendMessage) return Promise.resolve();
+      return Promise.resolve(extApi.runtime.sendMessage(n)).catch(() => {});
+    } catch {
+      return Promise.resolve();
+    }
   }
 }
 export { F as B };

@@ -21,7 +21,9 @@ import * as mod_25148 from "../shared/hooks/useStorage.js";
 import * as mod_67116 from "../shared/messaging/index.js";
 import { isCustomOpenAIServiceId } from "../shared/openaiUtils.js";
 import { useI18n } from "../shared/i18n/index.js";
+import createDebug from "debug";
 import * as mod_31085 from "react/jsx-runtime";
+const audioPlayLog = createDebug("ndt:audio");
 async function P(e) {
   mod_67116
     ._({
@@ -29,7 +31,7 @@ async function P(e) {
       url: e,
     })
     .catch((e) => {
-      console.error(e);
+      audioPlayLog("朗读失败：%o", e);
     });
 }
 function T(e) {

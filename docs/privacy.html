@@ -60,40 +60,44 @@
 <body>
   <main>
     <h1>隐私政策 / Privacy Policy — 无登翻译 (Modern Translator)</h1>
-    <p class="meta">最近更新 / Last Updated: 2026-11-22</p>
+    <p class="meta">最近更新 / Last Updated: 2026-11-27（适用于 v1.1.0 / Applies to v1.1.0）</p>
 
     <h2>中文隐私政策</h2>
-    <p><strong>无登翻译（Modern Translator，简称 ModernTrans）</strong> 是一款由个人非营利开发者（EU DSA 下的 Non-Trader 非商业主体）维护的完全免费、公益性质开源浏览器扩展，无任何商业收费、内购或广告。本扩展尊重并保护您的隐私，仅用于提供网页划词翻译、网页全文双语对照翻译与语音朗读功能。</p>
+    <p><strong>无登翻译（Modern Translator，简称 ModernTrans）</strong> 是一款由个人非营利开发者（EU DSA 下的 Non-Trader 非商业主体）维护的完全免费、公益性质开源浏览器扩展，无任何商业收费、内购或广告。本扩展尊重并保护您的隐私，仅用于提供网页与视频字幕翻译（划词翻译、网页全文双语对照、视频双语字幕），以及与翻译结果配套的语音朗读和本地生词本功能。</p>
 
     <h3>1. 我们处理哪些数据</h3>
     <ul>
       <li><strong>待翻译文本：</strong>仅当您主动触发划词翻译、右键菜单、快捷键或网页全文翻译时，扩展才会将您选中的文本或当前网页需要翻译的段落文本发送至您选定的翻译引擎。</li>
+      <li><strong>视频字幕（视频语言课堂）：</strong>仅当您在 YouTube 或哔哩哔哩（B站）视频页使用字幕复读/跳转或主动打开“语言课堂”时，扩展才会获取<strong>当前视频</strong>的标题与字幕；点击生成课前预习时，会将字幕文本发送至您选定的大模型以提取难词与生成学习卡片；不会获取观看历史、账号信息或其他视频数据。</li>
+      <li><strong>单词本：</strong>您在语言课堂中主动收藏的单词、短语、译文与例句仅保存在本地 <code>chrome.storage.local</code>（<code>ndtVocabularyBook</code>），不会上传；可随时删除、清空或导出（TSV）。</li>
       <li><strong>配置与密钥：</strong>您的语言偏好、界面设置、自定义 OpenAI 兼容接口地址与 API Key 仅存储在本地浏览器的 <code>chrome.storage.local</code> 中，不会上传至与翻译无关的服务器。</li>
       <li><strong>临时会话状态：</strong>整页自动翻译的标签页/窗口状态保存在本地浏览器的 <code>chrome.storage.session</code> 中，随会话结束自动销毁。</li>
       <li><strong>本地缓存：</strong>常用短词与短语的翻译结果会缓存在本地 IndexedDB（<code>ndt_translation_cache</code>）以提升响应速度，您可随时在设置页清理缓存。</li>
     </ul>
 
     <h3>2. 外部接口传输说明</h3>
-    <p>扩展不会在后台自动采集您的浏览历史。仅在您触发翻译或朗读时，数据会发送至您选择的对应服务商：</p>
+    <p>扩展不会在后台自动采集您的浏览历史。仅在您触发翻译、朗读或打开视频语言课堂时，数据才会发送至以下对应服务：</p>
     <ul>
       <li><strong>微软翻译（Microsoft Translator）：</strong><code>edge.microsoft.com</code>（或按需配置的 <code>api.cognitive.microsofttranslator.com</code>）。</li>
       <li><strong>谷歌翻译（Google Translate）：</strong><code>translate.googleapis.com</code>（含 <code>translate_tts</code> 语音朗读）、<code>clients5.google.com</code> 或您填写的镜像地址。</li>
       <li><strong>友情赞助商接口（<code>https://api.19781018.xyz</code>）：</strong>外部可选的第三方 API 服务；扩展自身无需登录与付费，仅在您主动填入 Key 并启用该服务或查询额度时调用。</li>
       <li><strong>自定义 OpenAI 兼容接口：</strong>仅发送至您自行填写的 Base URL。</li>
+      <li><strong>视频平台字幕接口：</strong>打开语言课堂时，以您当前的浏览器会话向视频平台本身请求当前视频字幕：YouTube（<code>www.youtube.com/youtubei/v1/*</code> 及字幕文件地址）、哔哩哔哩（<code>api.bilibili.com/x/player/*</code>、<code>api.bilibili.com/x/web-interface/*</code>）；扩展不会保存或转发平台 Cookie。</li>
     </ul>
 
     <h3>3. 权限说明</h3>
     <ul>
-      <li><code>&lt;all_urls&gt;</code>：用于在您浏览的网页注入划词浮窗与双语译文，并向已配置的翻译接口发起网络请求。</li>
-      <li><code>storage</code>：保存本地配置（<code>chrome.storage.local</code>）及临时会话自动翻译状态（<code>chrome.storage.session</code>）。</li>
+      <li><code>&lt;all_urls&gt;</code>：用于在您浏览的网页注入划词浮窗与双语译文，并向已配置的翻译接口及视频平台字幕接口发起网络请求。</li>
+      <li><code>storage</code>：保存本地配置与生词本（<code>chrome.storage.local</code>）及临时会话自动翻译状态（<code>chrome.storage.session</code>）。</li>
       <li><code>contextMenus</code>：提供右键“翻译选中文本 / 翻译当前网页”菜单项。</li>
       <li><code>clipboardWrite</code> 与 <code>offscreen</code>：通过离屏文档（<code>offscreen.html</code>）复制译文到剪贴板及播放语音朗读（TTS）。</li>
       <li><code>declarativeNetRequestWithHostAccess</code>：仅用于在用户使用谷歌语音朗读（<code>translate.googleapis.com/translate_tts</code>）时移除音频响应跨域限制头，不会读取或修改其他无关网站的流量。</li>
+      <li><code>scripting</code>：(1) 安装或更新后，向已打开的标签页重新注入扩展<strong>自带</strong>的内容脚本（<code>c.js</code> / <code>ca.js</code>），免去手动刷新；(2) 打开 YouTube 语言课堂时，在当前视频页运行扩展自带函数读取播放器字幕轨道信息。只执行安装包内代码，不执行任何远程代码。</li>
     </ul>
 
     <h3>4. 承诺声明与联系方式</h3>
     <ul>
-      <li>不收集任何个人身份信息（PII），不包含第三方广告、统计埋点或跨站追踪脚本，不出售或共享用户数据。</li>
+      <li>不收集任何个人身份信息（PII），不包含第三方广告、统计埋点或跨站追踪脚本，不出售或共享用户数据，不执行任何远程代码。</li>
       <li>开发者联系邮箱：<a href="mailto:wh1018@gmail.com">wh1018@gmail.com</a></li>
       <li>开源仓库：<a href="https://github.com/wesele/ModernTranslator" target="_blank" rel="noreferrer">https://github.com/wesele/ModernTranslator</a></li>
     </ul>
@@ -101,37 +105,41 @@
     <hr />
 
     <h2>English Privacy Policy</h2>
-    <p><strong>Modern Translator</strong> (<code>ModernTrans</code>) is a completely free, non-profit, open-source browser extension maintained by an independent individual developer (<strong>Non-Trader</strong> status under the EU Digital Services Act), with no paid plans, in-app purchases, or ads. It respects and protects your privacy and is solely dedicated to text selection translation, full-page bilingual translation, and text-to-speech playback.</p>
+    <p><strong>Modern Translator</strong> (<code>ModernTrans</code>) is a completely free, non-profit, open-source browser extension maintained by an independent individual developer (<strong>Non-Trader</strong> status under the EU Digital Services Act), with no paid plans, in-app purchases, or ads. It respects and protects your privacy and is solely dedicated to translating webpages and video subtitles (selection translation, full-page bilingual translation, bilingual video subtitles), with text-to-speech playback and a local wordbook for saved translations.</p>
 
     <h3>1. Data Handling</h3>
     <ul>
       <li><strong>Text to Translate:</strong> Only when you explicitly initiate a translation does the extension send the selected text or webpage paragraphs to your chosen translation provider.</li>
+      <li><strong>Video Subtitles (Language Classroom):</strong> Only when you use the player subtitle repeat controls or explicitly open the Language Classroom on a YouTube or Bilibili video page does the extension retrieve the title and subtitles of <strong>the current video</strong>; when generating pre-study cards, the subtitle text is sent to your chosen LLM to extract vocabulary and study notes. Watch history, account data, and other videos are never accessed.</li>
+      <li><strong>Wordbook:</strong> Words, phrases, translations, and example sentences you explicitly save from the Language Classroom are stored only locally in <code>chrome.storage.local</code> (<code>ndtVocabularyBook</code>) and are never uploaded; you can delete, clear, or export them (TSV) anytime.</li>
       <li><strong>Settings &amp; API Keys:</strong> Preferences, custom endpoints, and API keys are stored locally in <code>chrome.storage.local</code> and are never transmitted to unrelated servers.</li>
       <li><strong>Transient Session State:</strong> Per-tab/window auto-translation states are kept locally in <code>chrome.storage.session</code> and cleared automatically when the session ends.</li>
       <li><strong>Local Cache:</strong> Short translation results are cached locally in IndexedDB (<code>ndt_translation_cache</code>) and can be cleared anytime in settings.</li>
     </ul>
 
     <h3>2. External Services</h3>
-    <p>No browsing history is collected in the background. Translation or TTS requests are sent strictly to the engine selected by the user:</p>
+    <p>No browsing history is collected in the background. Requests are only sent when you trigger a translation, TTS playback, or open the Language Classroom, and only to the following endpoints:</p>
     <ul>
       <li><strong>Microsoft Translator:</strong> <code>edge.microsoft.com</code> (or <code>api.cognitive.microsofttranslator.com</code> when configured).</li>
       <li><strong>Google Translate:</strong> <code>translate.googleapis.com</code> (including <code>translate_tts</code> audio playback), <code>clients5.google.com</code>, or a user-configured mirror URL.</li>
       <li><strong>Community Sponsor LLM (<code>https://api.19781018.xyz</code>):</strong> An optional external third-party API endpoint; the extension itself requires no login or payment, and only contacts this host when you configure an API key or check quota.</li>
       <li><strong>Custom OpenAI-compatible APIs:</strong> Sent strictly to the Base URL you configure.</li>
+      <li><strong>Video platform subtitle endpoints:</strong> When the Language Classroom is opened, subtitles of the current video are requested from the platform itself using your existing browser session: YouTube (<code>www.youtube.com/youtubei/v1/*</code> and caption file URLs) and Bilibili (<code>api.bilibili.com/x/player/*</code>, <code>api.bilibili.com/x/web-interface/*</code>). Platform cookies are never stored or forwarded elsewhere.</li>
     </ul>
 
     <h3>3. Permission Disclosures</h3>
     <ul>
-      <li><code>&lt;all_urls&gt;</code>: Required to inject the selection popover and bilingual full-page translations on webpages and send translation requests to built-in or user-configured API endpoints.</li>
-      <li><code>storage</code>: Persists preferences in <code>chrome.storage.local</code> and transient auto-translate state in <code>chrome.storage.session</code>.</li>
+      <li><code>&lt;all_urls&gt;</code>: Required to inject the selection popover and bilingual full-page translations on webpages and send requests to built-in or user-configured translation endpoints and video platform subtitle endpoints.</li>
+      <li><code>storage</code>: Persists preferences and the wordbook in <code>chrome.storage.local</code> and transient auto-translate state in <code>chrome.storage.session</code>.</li>
       <li><code>contextMenus</code>: Provides right-click actions for translating selected text or full webpages.</li>
       <li><code>clipboardWrite</code> &amp; <code>offscreen</code>: Uses an offscreen document (<code>offscreen.html</code>) for clipboard copy and audio/TTS playback.</li>
       <li><code>declarativeNetRequestWithHostAccess</code>: Used solely with <code>net_request_rules.json</code> to remove <code>Cross-Origin-Resource-Policy</code> on <code>translate.googleapis.com/translate_tts</code> for audio/TTS playback. Unrelated traffic is never read or modified.</li>
+      <li><code>scripting</code>: (1) Re-injects the extension's own bundled content scripts (<code>c.js</code> / <code>ca.js</code>) into tabs already open before install/update, so pages work without a manual reload; (2) when you open the YouTube Language Classroom, runs a packaged function in the current video page to read the player's subtitle track metadata. Only bundled code is executed; no remote code.</li>
     </ul>
 
     <h3>4. Commitments &amp; Contact</h3>
     <ul>
-      <li>No collection of personally identifiable information (PII), no third-party ads, analytics SDKs, or behavioral tracking, and no sale or sharing of user data.</li>
+      <li>No collection of personally identifiable information (PII), no third-party ads, analytics SDKs, or behavioral tracking, no sale or sharing of user data, and no remote code execution.</li>
       <li>Developer Contact Email: <a href="mailto:wh1018@gmail.com">wh1018@gmail.com</a></li>
       <li>Source Repository: <a href="https://github.com/wesele/ModernTranslator" target="_blank" rel="noreferrer">https://github.com/wesele/ModernTranslator</a></li>
     </ul>

@@ -1,3 +1,5 @@
+import { t } from "./i18n/index.js";
+
 const WBI_MIXIN_KEY_ENC_TAB = [
   46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35,
   27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13,
@@ -227,7 +229,7 @@ function normalizeTrackMeta(rawTrack, index = 0) {
   if (!rawTrack) return null;
   const id = rawTrack.id_str || (rawTrack.id != null ? String(rawTrack.id) : "");
   const lan = rawTrack.lan || "";
-  const lanDoc = rawTrack.lan_doc || lan || `轨道 ${index + 1}`;
+  const lanDoc = rawTrack.lan_doc || lan || t("subtitle.trackNumber", { n: index + 1 });
   return {
     key: id || `${lan || "track"}-${index}`,
     id,
@@ -278,7 +280,7 @@ export async function fetchBilibiliSubtitles({ pageUrl }) {
     : `aid=${encodeURIComponent(parsed.aid)}`;
   const viewJson = await fetchJson(`https://api.bilibili.com/x/web-interface/view?${viewParam}`);
   if (viewJson?.code !== 0 || !viewJson?.data) {
-    throw new Error(viewJson?.message || "获取 B 站视频信息失败");
+    throw new Error(viewJson?.message || t("subtitle.biliVideoInfoFail"));
   }
 
   const viewData = viewJson.data;
