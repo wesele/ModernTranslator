@@ -2141,7 +2141,7 @@ function detectDomVideoSubtitles() {
 }
 
 function SubtitleSidePanel({ open, state, onRefresh, onLoadTrack, onClose }) {
-  const { t: trSub } = useI18n();
+  const { t: trSub, getTrackLabel } = useI18n();
   const { loading, data, error } = state || {};
   const tracks = Array.isArray(data?.tracks) ? data.tracks : [];
   const [selectedTrackKeys, setSelectedTrackKeys] = React.useState([]);
@@ -2341,11 +2341,12 @@ function SubtitleSidePanel({ open, state, onRefresh, onLoadTrack, onClose }) {
           {tracks.map((track) => {
             const checked = selectedTrackKeys.includes(track.key);
             const fallbackTrackName = trSub("subtitle.defaultTrackName");
+            const trackLabel = getTrackLabel(track) || fallbackTrackName;
             return (
               <label
                 key={track.key}
                 className={`ndt-sub-track-checkbox${checked ? " is-checked" : ""}`}
-                title={`${track.lanDoc}${track.author ? ` · ${track.author}` : ""}`}
+                title={`${trackLabel}${track.author ? ` · ${track.author}` : ""}`}
               >
                 <input
                   type="checkbox"
@@ -2354,9 +2355,7 @@ function SubtitleSidePanel({ open, state, onRefresh, onLoadTrack, onClose }) {
                 />
                 <span>
                   <bdi dir="auto">
-                    {loadingTrackKeys.has(track.key)
-                      ? `${track.lanDoc || track.lan || fallbackTrackName}...`
-                      : track.lanDoc || track.lan || fallbackTrackName}
+                    {loadingTrackKeys.has(track.key) ? `${trackLabel}...` : trackLabel}
                   </bdi>
                 </span>
               </label>

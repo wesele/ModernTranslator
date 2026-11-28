@@ -492,42 +492,119 @@ function capitalizeFirst(str, uiLocale) {
 }
 
 const resolvedNameCache = new Map();
+let reverseAliasMap = null;
 
-export function getLocalizedLanguageName(zhName, rawLocale = "zh", autoLabel = "") {
-  if (!zhName || zhName === "自动检测") {
-    return autoLabel || zhName || "";
+function normalizeSubtag(rawTag) {
+  let tag = String(rawTag || "")
+    .trim()
+    .replace(/_/g, "-");
+  if (!tag) return "";
+  if (/^ai-/i.test(tag)) {
+    tag = tag.slice(3);
+  }
+  const lower = tag.toLowerCase();
+  if (lower === "iw") return "he";
+  if (lower === "in") return "id";
+  if (lower === "ji") return "yi";
+  if (lower === "zh-cn" || lower === "zh-sg") return "zh-Hans";
+  if (lower === "zh-tw" || lower === "zh-hk" || lower === "zh-mo") return "zh-Hant";
+  if (lower === "yue-hk") return "yue";
+  return tag;
+}
+
+function getReverseAliasMap() {
+  if (reverseAliasMap) return reverseAliasMap;
+  const map = new Map();
+  for (const [zhName, bcp47] of Object.entries(ZH_NAME_TO_BCP47)) {
+    const key = zhName.trim().toLowerCase();
+    if (!map.has(key)) map.set(key, { zhName, tag: bcp47 });
+    const normTag = normalizeSubtag(bcp47).toLowerCase();
+    if (normTag && !map.has(normTag)) {
+      map.set(normTag, { zhName, tag: bcp47 });
+    }
+  }
+  for (const [zhName, localized] of Object.entries(EXPLICIT_NAMES)) {
+    const tag = ZH_NAME_TO_BCP47[zhName] || "";
+    for (const val of Object.values(localized)) {
+      const k = String(val || "").trim().toLowerCase();
+      if (k && !map.has(k)) map.set(k, { zhName, tag });
+    }
+  }
+  const enDn = getDisplayNames("en");
+  if (enDn) {
+    for (const [zhName, bcp47] of Object.entries(ZH_NAME_TO_BCP47)) {
+      try {
+        const enName = enDn.of(bcp47);
+        const k = String(enName || "").trim().toLowerCase();
+        if (k && !map.has(k)) map.set(k, { zhName, tag: bcp47 });
+      } catch {
+        // ignore invalid tag
+      }
+    }
+  }
+  reverseAliasMap = map;
+  return map;
+}
+
+function formatWithDisplayNames(tag, uiLocale) {
+  const normalized = normalizeSubtag(tag);
+  if (!normalized) return "";
+  const dn = getDisplayNames(uiLocale);
+  if (dn) {
+    try {
+      const result = dn.of(normalized);
+      if (result && result.toLowerCase() !== normalized.toLowerCase()) {
+        return capitalizeFirst(result, uiLocale);
+      }
+    } catch {
+      // ignore invalid BCP-47 tag
+    }
+  }
+  return "";
+}
+
+export function getLocalizedLanguageName(nameOrTag, rawLocale = "zh", autoLabel = "") {
+  const input = String(nameOrTag || "").trim();
+  if (!input || input === "自动检测") {
+    return autoLabel || input || "";
   }
 
   const uiLocale = normalizeUiLocale(rawLocale) || "en";
-  if (uiLocale === "zh") {
-    return zhName;
-  }
-
-  const cacheKey = `${uiLocale}::${zhName}`;
+  const cacheKey = `${uiLocale}::${input}`;
   if (resolvedNameCache.has(cacheKey)) {
     return resolvedNameCache.get(cacheKey);
   }
 
-  const explicit = EXPLICIT_NAMES[zhName];
+  let zhName = ZH_NAME_TO_BCP47[input] || EXPLICIT_NAMES[input] ? input : "";
+  let tag = ZH_NAME_TO_BCP47[input] || "";
+
+  if (!zhName) {
+    const alias = getReverseAliasMap().get(normalizeSubtag(input).toLowerCase()) ||
+      getReverseAliasMap().get(input.toLowerCase());
+    if (alias) {
+      zhName = alias.zhName;
+      tag = alias.tag;
+    } else if (/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(normalizeSubtag(input))) {
+      tag = normalizeSubtag(input);
+    }
+  }
+
+  if (uiLocale === "zh" && zhName) {
+    resolvedNameCache.set(cacheKey, zhName);
+    return zhName;
+  }
+
+  const explicit = zhName ? EXPLICIT_NAMES[zhName] : null;
   if (explicit?.[uiLocale]) {
     resolvedNameCache.set(cacheKey, explicit[uiLocale]);
     return explicit[uiLocale];
   }
 
-  const tag = ZH_NAME_TO_BCP47[zhName];
   if (tag) {
-    const dn = getDisplayNames(uiLocale);
-    if (dn) {
-      try {
-        const result = dn.of(tag);
-        if (result && result.toLowerCase() !== tag.toLowerCase()) {
-          const formatted = capitalizeFirst(result, uiLocale);
-          resolvedNameCache.set(cacheKey, formatted);
-          return formatted;
-        }
-      } catch {
-        // fall through to English / zhName fallback
-      }
+    const formatted = formatWithDisplayNames(tag, uiLocale);
+    if (formatted) {
+      resolvedNameCache.set(cacheKey, formatted);
+      return formatted;
     }
   }
 
@@ -537,25 +614,52 @@ export function getLocalizedLanguageName(zhName, rawLocale = "zh", autoLabel = "
   }
 
   if (tag && uiLocale !== "en") {
-    const enDn = getDisplayNames("en");
-    if (enDn) {
-      try {
-        const enRes = enDn.of(tag);
-        if (enRes && enRes.toLowerCase() !== tag.toLowerCase()) {
-          const formatted = capitalizeFirst(enRes, "en");
-          resolvedNameCache.set(cacheKey, formatted);
-          return formatted;
-        }
-      } catch {
-        // ignore
-      }
+    const enFormatted = formatWithDisplayNames(tag, "en");
+    if (enFormatted) {
+      resolvedNameCache.set(cacheKey, enFormatted);
+      return enFormatted;
     }
   }
 
-  resolvedNameCache.set(cacheKey, zhName);
-  return zhName;
+  const fallback = zhName || input;
+  resolvedNameCache.set(cacheKey, fallback);
+  return fallback;
+}
+
+const AUTO_SUBTITLE_SUFFIX_RE =
+  /\s*(?:\((?:auto[- ]?generated|自动生成|自動生成|자동\s*생성|autom[aá]ticos?|auto-g[ée]n[ée]r[ée]s|automatisch)\)|（(?:自动生成|自動生成)）)\s*$/i;
+
+export function getLocalizedTrackLabel(track, rawLocale = "en", autoSuffix = "") {
+  if (!track) return "";
+  const rawLan = String(typeof track === "string" ? "" : track.lan || "").trim();
+  const rawDoc = String(typeof track === "string" ? track : track.lanDoc || "").trim();
+  const isAuto =
+    Boolean(typeof track === "object" && track.isAutoGenerated) ||
+    /^ai-/i.test(rawLan) ||
+    AUTO_SUBTITLE_SUFFIX_RE.test(rawDoc);
+
+  const cleanDoc = rawDoc.replace(AUTO_SUBTITLE_SUFFIX_RE, "").trim();
+  const cleanLan = normalizeSubtag(rawLan);
+
+  let baseLabel = "";
+  if (cleanLan) {
+    const fromLan = getLocalizedLanguageName(cleanLan, rawLocale);
+    if (fromLan && fromLan.toLowerCase() !== cleanLan.toLowerCase()) {
+      baseLabel = fromLan;
+    }
+  }
+  if (!baseLabel && cleanDoc) {
+    baseLabel = getLocalizedLanguageName(cleanDoc, rawLocale);
+  }
+  if (!baseLabel) {
+    baseLabel = cleanLan || cleanDoc;
+  }
+  if (isAuto && autoSuffix && baseLabel && !AUTO_SUBTITLE_SUFFIX_RE.test(baseLabel)) {
+    return `${baseLabel} (${autoSuffix})`;
+  }
+  return baseLabel;
 }
 
 export function getLanguageBcp47(zhName) {
-  return ZH_NAME_TO_BCP47[zhName] || "";
+  return ZH_NAME_TO_BCP47[zhName] || normalizeSubtag(zhName) || "";
 }

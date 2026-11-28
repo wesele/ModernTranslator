@@ -98,6 +98,7 @@ function createBuildOptions(target, outDir) {
     b: path.join(srcDir, "background/index.js"),
     c: path.join(srcDir, "entries/content.jsx"),
     ca: path.join(srcDir, "entries/contentAllFrames.js"),
+    yt_hook: path.join(srcDir, "entries/youtubeMainHook.js"),
     p: path.join(srcDir, "entries/popup.jsx"),
     s: path.join(srcDir, "entries/settings.jsx"),
   };

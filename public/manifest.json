@@ -34,6 +34,11 @@
       }
    },
    "content_scripts": [ {
+      "js": [ "yt_hook.js" ],
+      "matches": [ "*://*.youtube.com/*" ],
+      "run_at": "document_start",
+      "world": "MAIN"
+   }, {
       "js": [ "c.js" ],
       "matches": [ "<all_urls>" ]
    }, {
@@ -59,7 +64,7 @@
       "48": "icons/icon48.png"
    },
    "manifest_version": 3,
-   "minimum_chrome_version": "110",
+   "minimum_chrome_version": "111",
    "name": "__MSG_name__",
    "short_name": "ModernTrans",
    "options_ui": {

@@ -38,6 +38,7 @@ import {
   getUiLocale,
   getServiceDisplayName,
   subscribeUiLocale,
+  ensureLocaleReady,
 } from "../shared/i18n/index.js";
 import {
   lookupSingleTranslationCache,
@@ -836,6 +837,7 @@ onMessage((msg, ctx) => {
     case "fetch bilibili subtitles":
     case "fetch bilibili first subtitle":
       return (async () => {
+        await ensureLocaleReady();
         const pageUrl = msg.pageUrl || ctx?.sender?.tab?.url || "";
         if (parseYouTubeVideoUrl(pageUrl)) {
           return fetchYouTubeSubtitles({
@@ -855,6 +857,7 @@ onMessage((msg, ctx) => {
 
     case "fetch video subtitle track":
       return (async () => {
+        await ensureLocaleReady();
         const pageUrl = msg.pageUrl || ctx?.sender?.tab?.url || "";
         if (parseYouTubeVideoUrl(pageUrl)) {
           return fetchYouTubeSingleTrack({
@@ -892,6 +895,7 @@ function getContextMenus() {
 let contextMenuSetupChain = Promise.resolve();
 function setupContextMenus() {
   contextMenuSetupChain = contextMenuSetupChain
+    .then(() => ensureLocaleReady())
     .then(
       () =>
         new Promise((resolve) => {

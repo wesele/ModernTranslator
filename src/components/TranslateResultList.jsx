@@ -317,7 +317,11 @@ function N(e) {
                       marginRight: 5,
                     }}
                   >
-                    {e.name}
+                    {e.name === "美"
+                      ? tr("result.phoneticUS")
+                      : e.name === "英"
+                        ? tr("result.phoneticUK")
+                        : e.name}
                   </span>
                 )}
                 {e.value && <mod_66126.A>/{e.value}/</mod_66126.A>}

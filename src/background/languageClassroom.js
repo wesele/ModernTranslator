@@ -10,7 +10,12 @@ import {
 } from "../shared/openaiUtils.js";
 import { runWithLlmConcurrency } from "./llmConcurrency.js";
 import { extractApiErrorMessage, isRateLimitOrOverload } from "../shared/llmErrorUtils.js";
-import { getServiceDisplayName, t } from "../shared/i18n/index.js";
+import {
+  getLocalizedLanguageName,
+  getServiceDisplayName,
+  ensureLocaleReady,
+  t,
+} from "../shared/i18n/index.js";
 import { mapSubtitleLangToTtsSource } from "../shared/wordbook.js";
 import { formatSubtitleTime } from "../shared/subtitleTimeline.js";
 import { hasArabicScript, normalizeTextForMatch } from "../shared/textScript.js";
@@ -64,11 +69,17 @@ function buildBatchPrompt({
     ? `\n- 阿拉伯语特别说明：term 可保留完整标音（Tashkeel/Harakat）便于学习发音，并在 phonetic 中提供拉丁转写或 IPA 读音；surfaceForm 与 videoQuote 请尽量直接摘录下方字幕原样拼写（不要改写词形）；detectedLanguage 请填写「阿拉伯语」。`
     : "";
 
+  const targetEn = getLocalizedLanguageName(targetLanguage || "中文(简体)", "en");
+  const targetDesc =
+    targetEn && targetEn !== targetLanguage
+      ? `${targetLanguage || "中文(简体)"} (${targetEn})`
+      : targetLanguage || "中文(简体)";
+
   return `你是一位经验丰富的外语教学专家。用户即将在 ${platformName} 观看一部外语学习视频，希望在观看前通过「语言课堂」提前预习视频字幕中最难的词汇和短语。
 
 视频标题：${videoTitle || "未命名视频"}
 ${sectionLine}字幕轨道：${trackLabel || trackLang || "未知语言"}
-释义与讲解目标语言：${targetLanguage || "中文(简体)"}
+释义与讲解目标语言：${targetDesc}
 
 任务要求：
 1. 仔细通读下方字幕片段，按**最难的约 ${ratio}%** 的标准，挑选出 ${minCount} 到 ${maxCount} 个最值得课前预习的高价值**难词**与**实用短语/固定搭配/习语**。
@@ -79,7 +90,7 @@ ${sectionLine}字幕轨道：${trackLabel || trackLang || "未知语言"}
 ${excludeLine}JSON 结构如下：
 {
   "detectedLanguage": "字幕语言名称（如 阿拉伯语 / 法语 / 西班牙语 / 英语 / 日语 等）",
-  "summary": "${needSummary ? `用${targetLanguage || "中文(简体)"}一句话概括本段主题与词汇难度特点` : ""}",
+  "summary": "${needSummary ? `用 ${targetDesc} 一句话概括本段主题与词汇难度特点` : ""}",
   "items": [
     {
       "term": "单词原型或标准短语表达",
@@ -89,18 +100,18 @@ ${excludeLine}JSON 结构如下：
       "pos": "词性简写（如 v. / n. / adj. / adv. / phrase / idiom）",
       "level": "难度等级标签（如 B2 / C1 / C2 / N1 / 高级）",
       "difficulty": 4,
-      "translation": "精准简洁的${targetLanguage || "中文(简体)"}核心释义（结合视频语境）",
-      "explanation": "用${targetLanguage || "中文(简体)"}写1句简明用法提示、语感辨析或语法要点",
+      "translation": "精准简洁的 ${targetDesc} 核心释义（结合视频语境）",
+      "explanation": "用 ${targetDesc} 写1句简明用法提示、语感辨析或语法要点",
       "videoQuote": "该词在字幕中出现的原句（直接摘自下方字幕，不要带时间戳）",
-      "videoQuoteTranslation": "上述 videoQuote 字幕原句对应的地道${targetLanguage || "中文(简体)"}译文",
+      "videoQuoteTranslation": "上述 videoQuote 字幕原句对应的地道 ${targetDesc} 译文",
       "examples": [
         {
           "sentence": "1条地道自然的原语例句",
-          "translation": "对应的${targetLanguage || "中文(简体)"}译文"
+          "translation": "对应的 ${targetDesc} 译文"
         },
         {
           "sentence": "第2条不同场景的实用例句",
-          "translation": "对应的${targetLanguage || "中文(简体)"}译文"
+          "translation": "对应的 ${targetDesc} 译文"
         }
       ]
     }
@@ -753,6 +764,7 @@ export async function extractClassroomVocabulary(
   { signal, onProgress } = {}
 ) {
   try {
+    await ensureLocaleReady();
     const cleanedCues = cleanSubtitleCues(
       Array.isArray(cues) ? cues : Array.isArray(track?.cues) ? track.cues : []
     );

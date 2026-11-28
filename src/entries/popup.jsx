@@ -350,17 +350,6 @@ function PopupApp() {
       });
   };
 
-  const handleOpenSubtitlePanel = async () => {
-    setErrorMsg("");
-    try {
-      await sendTabCommand("open subtitle panel");
-      window.close();
-    } catch {
-      setTabSupported(false);
-      setErrorMsg(t("popup.unsupportedPage"));
-    }
-  };
-
   return (
     <div className="ndt-popup">
       <header className="popup-header">
@@ -499,38 +488,6 @@ function PopupApp() {
       <footer className="popup-footer">
         <span className="footer-hint">{t("popup.footerHint")}</span>
         <div className="footer-actions">
-          <button
-            type="button"
-            className="settings-btn subtitle-btn"
-            disabled={!tabSupported}
-            onClick={handleOpenSubtitlePanel}
-            title={t("popup.subtitleBtnTitle")}
-          >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 16 16"
-              fill="none"
-              aria-hidden="true"
-            >
-              <rect
-                x="1.5"
-                y="3"
-                width="13"
-                height="10"
-                rx="2"
-                stroke="currentColor"
-                strokeWidth="1.4"
-              />
-              <path
-                d="M4 9.5H8.5M10.5 9.5H12M4 7H6M7.5 7H12"
-                stroke="currentColor"
-                strokeWidth="1.3"
-                strokeLinecap="round"
-              />
-            </svg>
-            <span>{t("popup.subtitleBtn")}</span>
-          </button>
           <button
             type="button"
             className="settings-btn"

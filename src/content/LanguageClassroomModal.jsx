@@ -242,7 +242,7 @@ function buildSectionStateKey(trackKey, ratio, apiCode, sectionId) {
 }
 
 export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, onDismissPopup }) {
-  const { t } = useI18n();
+  const { t, getLanguageName, getTrackLabel } = useI18n();
   const [cfg] = useStorage(CLASSROOM_STORAGE_KEYS);
   const wordbook = useWordbook();
 
@@ -995,11 +995,13 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
 
   const studyLangLabel = React.useMemo(
     () =>
-      activeSectionState.data?.detectedLanguage ||
-      currentTrack?.lanDoc ||
-      currentTrack?.lan ||
-      "",
-    [activeSectionState.data, currentTrack]
+      getLanguageName(
+        activeSectionState.data?.detectedLanguage ||
+          currentTrack?.lan ||
+          currentTrack?.lanDoc ||
+          ""
+      ),
+    [activeSectionState.data, currentTrack, getLanguageName]
   );
 
   const filteredItems = extractedItems;
@@ -1437,7 +1439,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                   >
                     {selectableTracks.map((tr) => (
                       <option key={tr.key} value={tr.key}>
-                        {tr.lanDoc || tr.lan || t("subtitle.defaultTrackName")}
+                        {getTrackLabel(tr) || t("subtitle.defaultTrackName")}
                         {tr.isActiveInPlayer
                           ? t("classroom.trackCurrentSuffix")
                           : tr.isOriginalLang
@@ -1451,6 +1453,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                     {selectableTracks.map((tr) => {
                       const isSel = currentTrack?.key === tr.key;
                       const isBusy = loadingTrackKey === tr.key;
+                      const label = getTrackLabel(tr) || t("subtitle.defaultTrackName");
                       return (
                         <button
                           key={tr.key}
@@ -1460,15 +1463,13 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                           onClick={() => {
                             startTrackStudy(tr);
                           }}
-                          title={`${tr.lanDoc}${tr.author ? ` · ${tr.author}` : ""}`}
+                          title={`${label}${tr.author ? ` · ${tr.author}` : ""}`}
                         >
                           <span>
                             {isBusy ? (
                               t("classroom.loading")
                             ) : (
-                              <bdi dir="auto">
-                                {tr.lanDoc || tr.lan || t("subtitle.defaultTrackName")}
-                              </bdi>
+                              <bdi dir="auto">{label}</bdi>
                             )}
                           </span>
                         </button>
@@ -1762,11 +1763,11 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                             <div className="ndt-cls-track-card-top">
                               <span
                                 className={`ndt-cls-track-card-name${
-                                  isRtlText(tr.lanDoc || tr.lan) ? " is-rtl" : ""
+                                  isRtlText(getTrackLabel(tr)) ? " is-rtl" : ""
                                 }`}
                                 dir="auto"
                               >
-                                {tr.lanDoc || tr.lan || t("classroom.subtitleTrack")}
+                                {getTrackLabel(tr) || t("classroom.subtitleTrack")}
                               </span>
                               {isRec && (
                                 <span className="ndt-cls-track-card-rec">
@@ -1838,7 +1839,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                           </option>
                           {selectableTracks.slice(6).map((tr) => (
                             <option key={tr.key} value={tr.key}>
-                              {tr.lanDoc || tr.lan}
+                              {getTrackLabel(tr)}
                             </option>
                           ))}
                         </select>
@@ -1884,9 +1885,7 @@ export function LanguageClassroomModal({ open, onClose, hasPopupOpen = false, on
                     <h3 className="ndt-cls-hero-title">
                       {(() => {
                         const trackLabel =
-                          currentTrack?.lanDoc ||
-                          currentTrack?.lan ||
-                          t("subtitle.defaultTrackName");
+                          getTrackLabel(currentTrack) || t("subtitle.defaultTrackName");
                         const sectionPart =
                           isMultiSection && activeSection
                             ? ` ${getSectionTitle(activeSection)}`
